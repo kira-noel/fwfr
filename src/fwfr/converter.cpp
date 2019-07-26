@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 // 
-// Modified from Apache Arrow's CSV reader.
+// Modified from Apache Arrow's CSV reader by Kira Noël.
 // 
 // Copyright © Her Majesty the Queen in Right of Canada, as represented
 // by the Minister of Statistics Canada, 2019.
@@ -38,7 +38,6 @@
 #include <arrow/type_traits.h>
 #include <arrow/util/parsing.h>  // IWYU pragma: keep
 #include <arrow/util/trie.h>
-//#include <arrow/util/utf8.h>
 
 namespace arrow {
 namespace fwfr {
@@ -123,7 +122,7 @@ Status NullConverter::Convert(const BlockParser& parser, int32_t col_index,
 /////////////////////////////////////////////////////////////////////////
 // Concrete Converter for var-sized binary strings
 
-template <typename T, bool CheckUTF8>
+template <typename T>
 class VarSizeBinaryConverter : public ConcreteConverter {
  public:
   using ConcreteConverter::ConcreteConverter;
@@ -393,15 +392,11 @@ Status Converter::Make(const std::shared_ptr<DataType>& type,
     CONVERTER_CASE(Type::DOUBLE, NumericConverter<DoubleType>)
     CONVERTER_CASE(Type::BOOL, BooleanConverter)
     CONVERTER_CASE(Type::TIMESTAMP, TimestampConverter)
-    CONVERTER_CASE(Type::BINARY, (VarSizeBinaryConverter<BinaryType, false>))
+    CONVERTER_CASE(Type::BINARY, (VarSizeBinaryConverter<BinaryType>))
     CONVERTER_CASE(Type::FIXED_SIZE_BINARY, FixedSizeBinaryConverter)
 
     case Type::STRING:
-      if (options.check_utf8) {
-        result = new VarSizeBinaryConverter<StringType, true>(type, options, pool);
-      } else {
-        result = new VarSizeBinaryConverter<StringType, false>(type, options, pool);
-      }
+      result = new VarSizeBinaryConverter<StringType>(type, options, pool);
       break;
 
     default: {

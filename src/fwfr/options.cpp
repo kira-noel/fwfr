@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 // 
-// Modified from Apache Arrow's CSV reader.
+// Modified from Apache Arrow's CSV reader by Kira Noël.
 // 
 // Copyright © Her Majesty the Queen in Right of Canada, as represented
 // by the Minister of Statistics Canada, 2019.

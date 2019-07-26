@@ -1,33 +1,65 @@
-set (VENV $ENV{CONDA_PREFIX})
+# Gather dependencies and build the fwfr library
 
+# Find fwfr's dependencies on the system
 find_package (PkgConfig REQUIRED)
+
+pkg_check_modules (ARROW REQUIRED arrow)
+message (STATUS "\tarrow library - ${ARROW_LIBRARY_DIRS}")
+message (STATUS "\tarrow include - ${ARROW_INCLUDE_DIRS}")
+
 pkg_check_modules (ICUUC REQUIRED icu-uc)
+message (STATUS "\ticu-uc library - ${ICUUC_LIBRARY_DIRS}")
+message (STATUS "\ticu-uc include - ${ICUUC_INCLUDE_DIRS}")
+
 pkg_check_modules (ICUI18N REQUIRED icu-i18n)
-set (ICU_INCLUDE_DIRS ${ICUUC_INCLUDE_DIRS} ${ICUI18N_INCLUDE_DIRS})
+message (STATUS "\ticu-i18n library - ${ICUI18N_LIBRARY_DIRS}")
+message (STATUS "\ticu-i18n include - ${ICUI18N_INCLUDE_DIRS}")
 
-find_library (DOUBLE_CONVERSION_LIB double-conversion PATHS ${VENV}/lib)
-set (DOUBLE_CONVERSION_INCLUDE_DIRS ${VENV}/include)
+find_package (DoubleConversion REQUIRED)
+message (STATUS "\tdouble-conversion library - ${DoubleConversion_LIB}")
+message (STATUS "\tdouble-conversion include - ${DoubleConversion_INCLUDE_DIR}")
 
-find_library (ARROW_LIB arrow PATHS ${VENV}/lib/python3.7/site-packages/pyarrow NO_DEFAULT_PATH)
-set (ARROW_INCLUDE_DIRS ${VENV}/lib/python3.7/site-packages/pyarrow/include)
+set (FWFR_INCLUDE_DIRS
+     ${ARROW_INCLUDE_DIRS}
+     ${ICUUC_INCLUDE_DIRS}
+     ${ICUI18N_INCLUDE_DIRS}
+     ${DoubleConversion_INCLUDE_DIR}
+)
+set (FWFR_LIBS 
+     ${ARROW_LIBRARIES} 
+     ${ICUUC_LIBRARIES} 
+     ${ICUI18N_LIBRARIES} 
+     ${DoubleConversion_LIB}
+)
+set (FWFR_LINK_DIRS
+    ${ARROW_LIBRARY_DIRS}
+    ${ICUUC_LIBRARY_DIRS}
+    ${ICUI18N_LIBRARY_DIRS}
+)
 
-include_directories (${ARROW_INCLUDE_DIRS} ${ICU_INCLUDE_DIRS} ${DOUBLE_CONVERSION_INCLUDE_DIRS})
-link_directories (${ICUI18N_LIBRARY_DIRS} ${ICUUC_LIBRARY_DIRS})
-
-set (LIBS ${ARROW_LIB} ${ICUI18N_LIBRARIES} ${ICUUC_LIBRARIES} ${DOUBLE_CONVERSION_LIB})
-
-include_directories (${PROJECT_SOURCE_DIR}/src)
+# Create fwfr library
+include_directories (${PROJECT_SOURCE_DIR}/src  # source files
+                     ${FWFR_INCLUDE_DIRS}
+)
+link_directories (${FWFR_LINK_DIRS})
 
 file (GLOB FWFR_SOURCES "fwfr/*.cpp")
-add_library (fwfr SHARED ${FWFR_SOURCES})
+file (GLOB FWFR_HEADERS "fwfr/*.h")
 
-#target_link_libraries (fwfr ${LIBS})
+add_library (fwfr SHARED ${FWFR_SOURCES})
+target_link_libraries (fwfr ${FWFR_LIBS})
 
 # Install
-install (TARGETS fwfr DESTINATION ${VENV}/lib)
-install (TARGETS fwfr DESTINATION ${PROJECT_SOURCE_DIR}/lib)
-install (TARGETS fwfr DESTINATION ${PROJECT_SOURCE_DIR}/bindings/pyfwfr)
-file (GLOB FWFR_HEADERS "fwfr/*.h")
-install (FILES ${FWFR_HEADERS} DESTINATION ${VENV}/include/fwfr)
-install (FILES ${FWFR_HEADERS} DESTINATION ${PROJECT_SOURCE_DIR}/include/fwfr)
-install (FILES ${FWFR_HEADERS} DESTINATION ${PROJECT_SOURCE_DIR}/bindings/pyfwfr/include/fwfr)
+#set (LIB_DEST ${VENV}/lib)
+#set (INCLUDE_DEST ${VENV}/include/fwfr)
+set (PY_INCLUDE_DEST ${PROJECT_SOURCE_DIR}/bindings/pyfwfr/include/fwfr)
+
+set (LIB_DEST ${CMAKE_INSTALL_PREFIX}/lib)
+set (INCLUDE_DEST ${CMAKE_INSTALL_PREFIX}/include/fwfr)
+
+install (TARGETS fwfr DESTINATION ${LIB_DEST})
+install (FILES ${FWFR_HEADERS} DESTINATION ${INCLUDE_DEST})
+
+if (FWFR_PYTHON)
+    install (FILES ${FWFR_HEADERS} DESTINATION ${PY_INCLUDE_DEST})
+endif()

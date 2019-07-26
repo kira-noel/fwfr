@@ -1,5 +1,3 @@
-import pyarrow  # to help fill symbol table for CPP extension
-
 from pyfwfr.fwfr import *
 from os import path
 
@@ -7,6 +5,6 @@ from os import path
 
 def get_library_dir():
     """
-    Return absolute path to pyfwfr package.
+    Return absolute path to libfwfr.so
     """
-    return path.dirname(__file__)
+    return path.dirname(__file__) + '/../../..'

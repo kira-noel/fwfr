@@ -44,12 +44,14 @@ cdef class ReadOptions:
     # Avoid mistakenly creating attributes
     __slots__ = ()
 
-    def __init__(self, encoding=None, use_threads=None):
+    def __init__(self, encoding=None, use_threads=None, block_size=None):
         self.options = CFWFReadOptions.Defaults()
         if encoding is not None:
             self.encoding = encoding
         if use_threads is not None:
             self.use_threads = use_threads
+        if block_size is not None:
+            self.block_size = block_size 
 
     @property
     def encoding(self):
@@ -85,7 +87,6 @@ cdef class ReadOptions:
     def use_threads(self, value):
         self.options.use_threads = value
 
-    '''
     @property
     def block_size(self):
         """
@@ -98,7 +99,6 @@ cdef class ReadOptions:
     @block_size.setter
     def block_size(self, value):
         self.options.block_size = value
-    '''
 
 cdef class ParseOptions:
     """
@@ -169,8 +169,6 @@ cdef class ConvertOptions:
 
     Parameters
     ----------
-    check_utf8 : bool, optional (default True)
-        Whether to check UTF8 validity of string columns.
     column_types : dict, optional
         Map column names to column types
         (disables type inferencing on those columns).
@@ -195,11 +193,9 @@ cdef class ConvertOptions:
     # Avoid mistakenly creating attributes
     __slots__ = ()
 
-    def __init__(self, check_utf8=None, column_types=None, null_values=None,
+    def __init__(self, column_types=None, null_values=None,
                  true_values=None, false_values=None, strings_can_be_null=None):
         self.options = CFWFConvertOptions.Defaults()
-        if check_utf8 is not None:
-            self.check_utf8 = check_utf8
         if column_types is not None:
             self.column_types = column_types
         if null_values is not None:
@@ -210,17 +206,6 @@ cdef class ConvertOptions:
             self.false_values = false_values
         if strings_can_be_null is not None:
             self.strings_can_be_null = strings_can_be_null
-
-    @property
-    def check_utf8(self):
-        """
-        Whether to check UTF8 validity of string columns.
-        """
-        return self.options.check_utf8
-
-    @check_utf8.setter
-    def check_utf8(self, value):
-        self.options.check_utf8 = value
 
     @property
     def column_types(self):

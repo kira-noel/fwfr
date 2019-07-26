@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 // 
-// Modified from Apache Arrow's CSV reader.
+// Modified from Apache Arrow's CSV reader by Kira Noël.
 // 
 // Copyright © Her Majesty the Queen in Right of Canada, as represented
 // by the Minister of Statistics Canada, 2019.
@@ -235,7 +235,7 @@ InField:
   if (ARROW_PREDICT_FALSE(cur_field_index == options_.field_widths[cur_field])) {
     goto FieldEnd;
   }
-  if (ARROW_PREDICT_FALSE(IsControlChar(c))) {
+  if (ARROW_PREDICT_FALSE(IsControlChar(c)) && !options_.newlines_in_values) {
     if (c == '\r') {
       // In the middle of a newline separator?
       if (ARROW_PREDICT_TRUE(data < data_end) && *data == '\n') {

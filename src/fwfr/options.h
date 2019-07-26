@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 // 
-// Modified from Apache Arrow's CSV reader.
+// Modified from Apache Arrow's CSV reader by Kira Noël.
 // 
 // Copyright © Her Majesty the Queen in Right of Canada, as represented
 // by the Minister of Statistics Canada, 2019.
@@ -58,8 +58,6 @@ struct ARROW_EXPORT ParseOptions {
 struct ARROW_EXPORT ConvertOptions {
   // Conversion options
 
-  // Whether to check UTF8 validity of string columns
-  bool check_utf8 = true;
   // Optional per-column types (disabling type inference on those columns)
   std::unordered_map<std::string, std::shared_ptr<DataType>> column_types;
   // Recognized spellings for null values
@@ -81,7 +79,7 @@ struct ARROW_EXPORT ReadOptions {
   // Encoding type on input data, if any
   std::string encoding = "";
   // Multiplier for allocating conversion buffer memory; X * encoded size
-  double buffer_safety_factor = 1.3;
+  double buffer_safety_factor = 2;
   // Whether to use the global CPU thread pool
   bool use_threads = true;
   // Block size we request from the IO layer; also determines the size of

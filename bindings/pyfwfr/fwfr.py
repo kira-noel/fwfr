@@ -7,4 +7,4 @@
 #
 # Distributed under terms of the license.
 
-from _fwfr import ReadOptions, ParseOptions, ConvertOptions, read_fwf
+from pyfwfr._fwfr import ReadOptions, ParseOptions, ConvertOptions, read_fwf

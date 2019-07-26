@@ -1,8 +1,16 @@
-all: 
-	@echo "Give more specific target."
+all: wheel
 
 wheel: clean
-	python setup.py bdist_wheel
+	@echo "building wheel"
+	@python setup.py bdist_wheel
+
+wheel-quiet: clean
+	@echo "building wheel -- quiet"
+	@python setup.py bdist_wheel 1>/dev/null
+
+tar: clean
+	@echo "building tar"
+	@python setup.py bdist --formats=gztar
 
 clean:
 	@rm -rf build
@@ -13,7 +21,6 @@ cleaner: clean
 	@rm -f *~
 
 cleanest: cleaner
-	@rm -f pyfwfr/libfwfr.so
 	@rm -rf pyfwfr/include/*
 	@rm -rf pyfwfr/__pycache__
 	@rm -rf pyfwfr/tests/__pycache__

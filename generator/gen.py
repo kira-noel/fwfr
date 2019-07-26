@@ -17,10 +17,12 @@ import pandas as pd
 from tabulate import tabulate
 
 num_cols = 4
-num_records = 10
+num_records = 1000
 max_val = 9999
 
-outfile = 'data.strings'
+name = 'strings'
+gen_type = 'gen'
+encoding = 'cp1047'
 
 def gen_col_names():
     letters = string.ascii_lowercase
@@ -69,6 +71,6 @@ def decode_file(fname, encoding):
                 f_decoded.write(line.decode(encoding))
 
 if __name__ == '__main__':
-    gen_fwf('bigstrings', 'num')
-    encode_file('bigstrings', 'cp1047')
+    #gen_fwf(name, gen_type)
+    encode_file(name, encoding)
     #decode_file('bigstrings', 'cp1047')

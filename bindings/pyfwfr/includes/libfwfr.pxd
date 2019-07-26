@@ -24,7 +24,7 @@ cdef extern from "../include/fwfr/api.h" namespace "arrow::fwfr" nogil:
         c_string encoding
         double buffer_safety_factor
         c_bool use_threads
-        #int32_t block_size
+        int32_t block_size
         
         @staticmethod
         CFWFReadOptions Defaults()    
@@ -38,7 +38,6 @@ cdef extern from "../include/fwfr/api.h" namespace "arrow::fwfr" nogil:
         CFWFParseOptions Defaults()
 
     cdef cppclass CFWFConvertOptions" arrow::fwfr::ConvertOptions":
-        c_bool check_utf8
         unordered_map[c_string, shared_ptr[CDataType]] column_types
         vector[c_string] null_values
         vector[c_string] true_values

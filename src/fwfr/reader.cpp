@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 // 
-// Modified from Apache Arrow's CSV reader.
+// Modified from Apache Arrow's CSV reader by Kira Noël.
 // 
 // Copyright © Her Majesty the Queen in Right of Canada, as represented
 // by the Minister of Statistics Canada, 2019.
@@ -49,7 +49,8 @@
 #include <arrow/util/macros.h>
 #include <arrow/util/task-group.h>
 #include <arrow/util/thread-pool.h>
-//#include <arrow/util/utf8.h>
+
+#include <iostream>
 
 #include <cstdio>
 #include <cstring>
@@ -76,6 +77,13 @@ using io::internal::ReadaheadSpooler;
 
 static constexpr int64_t kDefaultLeftPadding = 2048;  // 2 kB
 static constexpr int64_t kDefaultRightPadding = 16;
+
+inline bool IsWhitespace(uint8_t c) {
+  if (ARROW_PREDICT_TRUE(c > ' ')) {
+    return false;
+  }
+  return c == ' ' || c == '\t';
+}
 
 /////////////////////////////////////////////////////////////////////////
 // Base class for common functionality
@@ -129,7 +137,7 @@ class BaseTableReader : public fwfr::TableReader {
     // Convert input data's encoding to UTF8 if read_options_.encoding is set
     // Notes:
     //   * for accepted codesets: https://demo.icu-project.org/icu-bin/convexp
-    //   * EBCDIC encodings need ",flnl" appended to codeset name ("cp1047,flnl")
+    //   * EBCDIC encodings need ",lfnl" appended to codeset name ("cp1047,lfnl")
     //     to properly handle newlines 
     if (read_options_.encoding != "") {
         UErrorCode u_glob_status = U_ZERO_ERROR;
@@ -142,13 +150,14 @@ class BaseTableReader : public fwfr::TableReader {
             return Status::Invalid(u_errorName(uerr));
         }
 
-        // TODO do garbage collection for decoded_data
-        char *decoded_data = (char*)malloc(
-                int(read_options_.buffer_safety_factor * new_size)*sizeof(char));
-        decoded_data[int(read_options_.buffer_safety_factor * new_size)] = {};
-        size_t decoded_size = 0;
-        decoded_size = ucnv_toAlgorithmic(UCNV_UTF8, uconv, decoded_data, 
-                                          int(read_options_.buffer_safety_factor * new_size),  
+        int64_t buf_size = int(new_size * read_options_.buffer_safety_factor);
+        char *buf = (char*)malloc(buf_size * sizeof(char));
+        if (buf == NULL) {
+            return Status::Invalid("Allocation for conversion buffer memory failed.");
+        }
+        buf[buf_size] = {};
+        size_t decoded_size;
+        decoded_size = ucnv_toAlgorithmic(UCNV_UTF8, uconv, buf, buf_size,  
                                           reinterpret_cast<const char*>(new_data), 
                                           new_size, &uerr);
 
@@ -156,11 +165,16 @@ class BaseTableReader : public fwfr::TableReader {
             return Status::Invalid(u_errorName(uerr));
         }
 
+        // Copy malloc'd data into a Buffer
+        RETURN_NOT_OK(Buffer::FromString(std::string(buf), &new_block));
+
+        new_data = new_block->mutable_data();
+        new_size = decoded_size;
+
+        // Return memory
         ucnv_close(uconv);
         u_cleanup();
-        
-        new_data = reinterpret_cast<uint8_t*>(decoded_data);
-        new_size = decoded_size;
+        free(buf);
     }
 
     if (trailing_cr_ && new_data[0] == '\n') {
@@ -221,6 +235,21 @@ class BaseTableReader : public fwfr::TableReader {
     for (int32_t col_index = 0; col_index < num_cols_; ++col_index) {
       auto visit = [&](const uint8_t* data, uint32_t size) -> Status {
         DCHECK_EQ(column_names_.size(), static_cast<uint32_t>(col_index));
+        // Skip trailing whitespace
+        if (ARROW_PREDICT_TRUE(size > 0) && ARROW_PREDICT_FALSE(IsWhitespace(data[size - 1]))) {
+          const uint8_t* p = data + size - 1;
+          while (size > 0 && IsWhitespace(*p)) {
+            --size;
+            --p;
+          }
+        }
+        // Skip leading whitespace
+        if (ARROW_PREDICT_TRUE(size > 0) && ARROW_PREDICT_FALSE(IsWhitespace(data[0]))) {
+          while (size > 0 && IsWhitespace(*data)) {
+            --size;
+            ++data;
+          }
+        } 
         column_names_.emplace_back(reinterpret_cast<const char*>(data), size);
         return Status::OK();
       };
