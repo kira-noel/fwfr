@@ -28,15 +28,18 @@ cdef class ReadOptions:
     encoding : strings, optional (default none)
         Encoding of input data. Input is assumed to be UTF8 unless
         otherwise specified.
-    buffer_safety_factor : double, optional (deafult 1.3)
-        Multiplier for allocating conversion buffer memory:
-        X * encoded size
     use_threads : bool, optional (default True)
         Whether to use multiple threads to accelerate reading
     block_size : int, optional
         How many bytes to process at a time from the input stream.
         This will determine multi-threading granularity as well as 
         the size of individual chunks in the Table.
+    skip_rows : int, optional (default 0)
+        Number of header rows to skip (not including the row of 
+        column names, if any).
+    column_names : list, optional
+        Column names (if empty, will be read from first row after 
+        'skip_rows').
     """
     cdef:
         CFWFReadOptions options
@@ -44,14 +47,18 @@ cdef class ReadOptions:
     # Avoid mistakenly creating attributes
     __slots__ = ()
 
-    def __init__(self, encoding=None, use_threads=None, block_size=None):
+    def __init__(self, encoding=None, use_threads=None, block_size=None, skip_rows=None, column_names=None):
         self.options = CFWFReadOptions.Defaults()
         if encoding is not None:
             self.encoding = encoding
         if use_threads is not None:
             self.use_threads = use_threads
         if block_size is not None:
-            self.block_size = block_size 
+            self.block_size = block_size
+        if skip_rows is not None:
+            self.skip_rows = skip_rows
+        if column_names is not None:
+            self.column_names = column_names
 
     @property
     def encoding(self):
@@ -64,17 +71,6 @@ cdef class ReadOptions:
     @encoding.setter
     def encoding(self, value):
         self.options.encoding = tobytes(value)
-
-    @property
-    def buffer_safety_factor(self):
-        """
-        Multiplier for allocting conversion buffer memory: X * encoded size
-        """
-        return self.options.buffer_safety_factor
-
-    @buffer_safety_factor.setter
-    def buffer_safety_factor(self, value):
-        self.options.buffer_safety_factor = value
 
     @property
     def use_threads(self):
@@ -100,6 +96,31 @@ cdef class ReadOptions:
     def block_size(self, value):
         self.options.block_size = value
 
+
+    @property
+    def skip_rows(self):
+        """
+        Number of rows to skip at beginning of data.
+        """
+        return self.options.skip_rows
+
+    @skip_rows.setter
+    def skip_rows(self, value):
+        self.options.skip_rows = value
+
+    @property
+    def column_names(self):
+        """
+        Column names. If not set, will attempt to parse from first
+        row after skip_rows.
+        """
+        return [frombytes(x) for x in self.options.column_names]
+
+    @column_names.setter
+    def column_names(self, value):
+        self.options.column_names = [tobytes(x) for x in value]
+
+
 cdef class ParseOptions:
     """
     Options for parsing fixed-width files.
@@ -108,8 +129,6 @@ cdef class ParseOptions:
     ----------
     field widths : int list, required
         The number of bytes in each field in a column of FWF data.
-    header_rows : int, optional (default 1)
-        The number of rows to skip at the start of the FWF data.
     ignore_empty_lines : bool, optional (default True)
         Whether empty lines are ignored in FWF input.
     """
@@ -119,12 +138,9 @@ cdef class ParseOptions:
     # Avoid mistakenly creating new attributes
     __slots__ = ()
 
-    def __init__(self, field_widths, header_rows=None, 
-                 ignore_empty_lines=None):
+    def __init__(self, field_widths, ignore_empty_lines=None):
         self.options = CFWFParseOptions.Defaults()
         self.field_widths = field_widths
-        if header_rows is not None:
-            self.header_rows = header_rows
         if ignore_empty_lines is not None:
             self.ignore_empty_lines = ignore_empty_lines
 
@@ -138,18 +154,6 @@ cdef class ParseOptions:
     @field_widths.setter
     def field_widths(self, value):
         self.options.field_widths = value
-        #self.options.field_widths = [x for x in value]
-
-    @property
-    def header_rows(self):
-        """
-        The number of rows ro skip at the start of the FWF data.
-        """
-        return self.options.header_rows
-
-    @header_rows.setter
-    def header_rows(self, value):
-        self.options.header_rows = value
 
     @property
     def ignore_empty_lines(self):
@@ -172,6 +176,16 @@ cdef class ConvertOptions:
     column_types : dict, optional
         Map column names to column types
         (disables type inferencing on those columns).
+    is_cobol : bool, optional (deafult False)
+        Whether to check for and handle COBOL-formatted numeric data.
+    pos_values : dict, optional
+        Map last char of field to COBOL positive ending char
+        (defaults are appropriate in most cases).
+            ex. '6{' --> 60
+    neg_values : dict, optional
+        Map last char of field to COBOL negative ending char
+        (defaults are appropriate in most cases).
+            ex. '6}' --> -60
     null_values : list, optional
         A sequence of strings that denote nulls in the data
         (defaults are approproate in most cases).
@@ -193,11 +207,18 @@ cdef class ConvertOptions:
     # Avoid mistakenly creating attributes
     __slots__ = ()
 
-    def __init__(self, column_types=None, null_values=None,
-                 true_values=None, false_values=None, strings_can_be_null=None):
+    def __init__(self, column_types=None, is_cobol=None, pos_values=None,
+                 neg_values=None, null_values=None, true_values=None, 
+                 false_values=None, strings_can_be_null=None):
         self.options = CFWFConvertOptions.Defaults()
         if column_types is not None:
             self.column_types = column_types
+        if is_cobol is not None:
+            self.is_cobol = is_cobol
+        if pos_values is not None:
+            self.pos_values = pos_values
+        if neg_values is not None:
+            self.neg_values = neg_values
         if null_values is not None:
             self.null_values = null_values
         if true_values is not None:
@@ -235,6 +256,54 @@ cdef class ConvertOptions:
             assert typ != NULL
             self.options.column_types[tobytes(k)] = typ
 
+    @property
+    def is_cobol(self):
+        """
+        Whether to check for COBOL formatted numeric types.
+        Uses pos_values and neg_values to make replacements.
+        """
+        return self.options.is_cobol
+
+    @is_cobol.setter
+    def is_cobol(self, value):
+        self.options.is_cobol = value
+
+    @property 
+    def pos_values(self):
+        """
+        COBOL values for interpreting positive numeric values.
+        """
+        d = {chr(item.first): chr(item.second) for item in self.options.pos_values}
+        return d
+
+    @pos_values.setter
+    def pos_values(self, value):
+        if isinstance(value, Mapping):
+            value = value.items()
+
+        self.options.pos_values.clear()
+        for item in value:
+            k, v = item
+            self.options.pos_values[ord(k)] = ord(v)
+
+    @property 
+    def neg_values(self):
+        """
+        COBOL values for interpreting negative numeric values.
+        """
+        d = {chr(item.first): chr(item.second) for item in self.options.neg_values}
+        return d
+
+    @neg_values.setter
+    def neg_values(self, value):
+        if isinstance(value, Mapping):
+            value = value.items()
+
+        self.options.neg_values.clear()
+        for item in value:
+            k, v = item
+            self.options.neg_values[ord(k)] = ord(v)
+ 
     @property
     def null_values(self):
         """

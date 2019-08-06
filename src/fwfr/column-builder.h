@@ -33,22 +33,20 @@
 #include <arrow/util/visibility.h>
 
 namespace arrow {
-
-class ChunkedArray;
-class DataType;
-
-namespace internal {
-
-class TaskGroup;
-
-}  // namespace internal
+    class ChunkedArray;
+    class DataType;
+    
+    namespace internal {
+        class TaskGroup;
+    }
+}
 
 namespace fwfr {
 
 class BlockParser;
 struct ConvertOptions;
 
-class ARROW_EXPORT ColumnBuilder {
+class ColumnBuilder {
  public:
   virtual ~ColumnBuilder() = default;
 
@@ -62,33 +60,32 @@ class ARROW_EXPORT ColumnBuilder {
                       const std::shared_ptr<BlockParser>& parser) = 0;
 
   /// Return the final chunked array.  The TaskGroup _must_ have finished!
-  virtual Status Finish(std::shared_ptr<ChunkedArray>* out) = 0;
+  virtual arrow::Status Finish(std::shared_ptr<arrow::ChunkedArray>* out) = 0;
 
   /// Change the task group.  The previous TaskGroup _must_ have finished!
-  void SetTaskGroup(const std::shared_ptr<internal::TaskGroup>& task_group);
+  void SetTaskGroup(const std::shared_ptr<arrow::internal::TaskGroup>& task_group);
 
-  std::shared_ptr<internal::TaskGroup> task_group() { return task_group_; }
+  std::shared_ptr<arrow::internal::TaskGroup> task_group() { return task_group_; }
 
   /// Construct a strictly-typed ColumnBuilder.
-  static Status Make(const std::shared_ptr<DataType>& type, int32_t col_index,
-                     const ConvertOptions& options,
-                     const std::shared_ptr<internal::TaskGroup>& task_group,
-                     std::shared_ptr<ColumnBuilder>* out);
+  static arrow::Status Make(const std::shared_ptr<arrow::DataType>& type, int32_t col_index,
+                           const ConvertOptions& options,
+                           const std::shared_ptr<arrow::internal::TaskGroup>& task_group,
+                           std::shared_ptr<ColumnBuilder>* out);
 
   /// Construct a type-inferring ColumnBuilder.
-  static Status Make(int32_t col_index, const ConvertOptions& options,
-                     const std::shared_ptr<internal::TaskGroup>& task_group,
-                     std::shared_ptr<ColumnBuilder>* out);
+  static arrow::Status Make(int32_t col_index, const ConvertOptions& options,
+                            const std::shared_ptr<arrow::internal::TaskGroup>& task_group,
+                            std::shared_ptr<ColumnBuilder>* out);
 
  protected:
-  explicit ColumnBuilder(const std::shared_ptr<internal::TaskGroup>& task_group)
+  explicit ColumnBuilder(const std::shared_ptr<arrow::internal::TaskGroup>& task_group)
       : task_group_(task_group) {}
 
-  std::shared_ptr<internal::TaskGroup> task_group_;
-  ArrayVector chunks_;
+  std::shared_ptr<arrow::internal::TaskGroup> task_group_;
+  arrow::ArrayVector chunks_;
 };
 
 }  // namespace fwfr
-}  // namespace arrow
 
 #endif  // FWFR_COLUMN_BUILDER_H

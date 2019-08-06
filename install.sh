@@ -66,7 +66,8 @@ if test $# -gt 0; then
                 exit 1;
             fi
             conda install -y gcc_linux-64\>=5.1 gxx_linux-64\>=5.1 cmake\>=3.2 make \
-                python=3.7 arrow-cpp\>=0.14 pyarrow\>=0.14 pkg-config cython\>=0.29 
+                python=3.7 arrow-cpp\>=0.14 pyarrow\>=0.14 pkg-config cython\>=0.29 \
+                -c conda-forge
             source $CONDA_PREFIX/../../bin/activate $CONDA_DEFAULT_ENV  # pull in new $CC $CXX
             mkdir -p build && cd build
             cmake \

@@ -24,7 +24,6 @@
 
 #include <fwfr/options.h>
 
-namespace arrow {
 namespace fwfr {
 
 ParseOptions ParseOptions::Defaults() { return ParseOptions(); }
@@ -43,4 +42,3 @@ ConvertOptions ConvertOptions::Defaults() {
 ReadOptions ReadOptions::Defaults() { return ReadOptions(); }
 
 }  // namespace fwfr
-}  // namespace arrow

@@ -19,26 +19,29 @@ from pyarrow.compat import frombytes, tobytes, Mapping
 from pyarrow.includes.common cimport CStatus
 from pyarrow.includes.libarrow cimport CDataType, CMemoryPool, CTable, InputStream
 
-cdef extern from "../include/fwfr/api.h" namespace "arrow::fwfr" nogil:
-    cdef cppclass CFWFReadOptions" arrow::fwfr::ReadOptions":
+cdef extern from "../include/fwfr/api.h" namespace "fwfr" nogil:
+    cdef cppclass CFWFReadOptions" fwfr::ReadOptions":
         c_string encoding
-        double buffer_safety_factor
         c_bool use_threads
         int32_t block_size
+        int32_t skip_rows
+        vector[c_string] column_names
         
         @staticmethod
         CFWFReadOptions Defaults()    
         
-    cdef cppclass CFWFParseOptions" arrow::fwfr::ParseOptions":
+    cdef cppclass CFWFParseOptions" fwfr::ParseOptions":
         vector[uint32_t] field_widths
-        int32_t header_rows
         c_bool ignore_empty_lines
 
         @staticmethod
         CFWFParseOptions Defaults()
 
-    cdef cppclass CFWFConvertOptions" arrow::fwfr::ConvertOptions":
+    cdef cppclass CFWFConvertOptions" fwfr::ConvertOptions":
         unordered_map[c_string, shared_ptr[CDataType]] column_types
+        c_bool is_cobol
+        unordered_map[char, char] pos_values
+        unordered_map[char, char] neg_values
         vector[c_string] null_values
         vector[c_string] true_values
         vector[c_string] false_values
@@ -47,10 +50,10 @@ cdef extern from "../include/fwfr/api.h" namespace "arrow::fwfr" nogil:
         @staticmethod
         CFWFConvertOptions Defaults()
 
-    cdef cppclass CFWFReader" arrow::fwfr::TableReader":
+    cdef cppclass CFWFReader" fwfr::TableReader":
         @staticmethod
         CStatus Make(CMemoryPool*, shared_ptr[InputStream],
-                    CFWFReadOptions, CFWFParseOptions, CFWFConvertOptions,
-                    shared_ptr[CFWFReader]* out)
+                     CFWFReadOptions, CFWFParseOptions, CFWFConvertOptions,
+                     shared_ptr[CFWFReader]* out)
 
         CStatus Read(shared_ptr[CTable]* out)

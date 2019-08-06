@@ -34,11 +34,11 @@
 #include <arrow/util/visibility.h>
 
 namespace arrow {
-
-class Array;
-class DataType;
-class MemoryPool;
-class Status;
+    class Array;
+    class DataType;
+    class MemoryPool;
+    class Status;
+}
 
 namespace fwfr {
 
@@ -46,31 +46,30 @@ class BlockParser;
 
 class ARROW_EXPORT Converter {
  public:
-  Converter(const std::shared_ptr<DataType>& type, const ConvertOptions& options,
-            MemoryPool* pool);
+  Converter(const std::shared_ptr<arrow::DataType>& type, const ConvertOptions& options,
+            arrow::MemoryPool* pool);
   virtual ~Converter() = default;
 
-  virtual Status Convert(const BlockParser& parser, int32_t col_index,
-                         std::shared_ptr<Array>* out) = 0;
+  virtual arrow::Status Convert(const BlockParser& parser, int32_t col_index,
+                         std::shared_ptr<arrow::Array>* out) = 0;
 
-  std::shared_ptr<DataType> type() const { return type_; }
+  std::shared_ptr<arrow::DataType> type() const { return type_; }
 
-  static Status Make(const std::shared_ptr<DataType>& type, const ConvertOptions& options,
+  static arrow::Status Make(const std::shared_ptr<arrow::DataType>& type, const ConvertOptions& options,
                      std::shared_ptr<Converter>* out);
-  static Status Make(const std::shared_ptr<DataType>& type, const ConvertOptions& options,
-                     MemoryPool* pool, std::shared_ptr<Converter>* out);
+  static arrow::Status Make(const std::shared_ptr<arrow::DataType>& type, const ConvertOptions& options,
+                     arrow::MemoryPool* pool, std::shared_ptr<Converter>* out);
 
  protected:
   ARROW_DISALLOW_COPY_AND_ASSIGN(Converter);
 
-  virtual Status Initialize() = 0;
+  virtual arrow::Status Initialize() = 0;
 
   const ConvertOptions options_;
-  MemoryPool* pool_;
-  std::shared_ptr<DataType> type_;
+  arrow::MemoryPool* pool_;
+  std::shared_ptr<arrow::DataType> type_;
 };
 
 }  // namespace fwfr
-}  // namespace arrow
 
 #endif  // FWFR_CONVERTER_H

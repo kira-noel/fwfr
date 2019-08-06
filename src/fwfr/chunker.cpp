@@ -29,7 +29,6 @@
 #include <arrow/status.h>
 #include <arrow/util/logging.h>
 
-namespace arrow {
 namespace fwfr {
 
 namespace {
@@ -56,7 +55,6 @@ const char* FindNewlineReverse(const char* data, uint32_t size) {
 Chunker::Chunker(ParseOptions options) 
     : options_(options) {}
 
-// NOTE: csvmonkey (https://github.com/dw/csvmonkey) has optimization ideas
 inline const char* Chunker::ReadLine(const char* data, const char* data_end) {
   // The parsing state machine
   char c;
@@ -107,7 +105,7 @@ AbortLine:
   return nullptr;
 }
 
-Status Chunker::ProcessSpecialized(const char* start, uint32_t size, uint32_t* out_size) {
+arrow::Status Chunker::ProcessSpecialized(const char* start, uint32_t size, uint32_t* out_size) {
   const char* data = start;
   const char* data_end = start + size;
 
@@ -120,10 +118,10 @@ Status Chunker::ProcessSpecialized(const char* start, uint32_t size, uint32_t* o
     data = line_end;
   }
   *out_size = static_cast<uint32_t>(data - start);
-  return Status::OK();
+  return arrow::Status::OK();
 }
 
-Status Chunker::Process(const char* start, uint32_t size, uint32_t* out_size) {
+arrow::Status Chunker::Process(const char* start, uint32_t size, uint32_t* out_size) {
   if (!options_.newlines_in_values) {
     // If newlines are not accepted in FWF values, we can simply search for
     // the last newline character.
@@ -136,10 +134,9 @@ Status Chunker::Process(const char* start, uint32_t size, uint32_t* out_size) {
     } else {
       *out_size = static_cast<uint32_t>(nl - start + 1);
     }
-    return Status::OK();
+    return arrow::Status::OK();
   }
   return ProcessSpecialized(start, size, out_size);
 }
 
 }  // namespace fwfr
-}  // namespace arrow

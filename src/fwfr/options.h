@@ -34,8 +34,8 @@
 #include <arrow/util/visibility.h>
 
 namespace arrow {
-
-class DataType;
+    class DataType;
+}
 
 namespace fwfr {
 
@@ -49,8 +49,6 @@ struct ARROW_EXPORT ParseOptions {
   // Whether empty lines are ignored.  If false, an empty line represents
   // a single empty value (assuming a one-column FWF file).
   bool ignore_empty_lines = true;
-  // Number of header rows to skip (including the first row containing column names)
-  int32_t header_rows = 1;
 
   static ParseOptions Defaults();
 };
@@ -59,7 +57,19 @@ struct ARROW_EXPORT ConvertOptions {
   // Conversion options
 
   // Optional per-column types (disabling type inference on those columns)
-  std::unordered_map<std::string, std::shared_ptr<DataType>> column_types;
+  std::unordered_map<std::string, std::shared_ptr<arrow::DataType>> column_types;
+  // Whether to treat as COBOL data
+  bool is_cobol = false;
+  // Optional, positive numbers for COBOL datasets. Use last character to change field meaning.
+  std::unordered_map<char, char> pos_values = {
+          {'{', '0'}, {'A', '1'}, {'B', '2'}, {'C', '3'}, {'D', '4'},
+          {'E', '5'}, {'F', '6'}, {'G', '7'}, {'H', '8'}, {'I', '9'}
+  };
+  // Optional, negative numbers for COBOL datasets. Use last character to change field meaning.
+  std::unordered_map<char, char> neg_values = {
+          {'}', '0'}, {'J', '1'}, {'K', '2'}, {'L', '3'}, {'M', '4'},
+          {'E', '5'}, {'O', '6'}, {'P', '7'}, {'Q', '8'}, {'R', '9'}
+  };
   // Recognized spellings for null values
   std::vector<std::string> null_values;
   // Recognized spellings for boolean values
@@ -78,18 +88,20 @@ struct ARROW_EXPORT ReadOptions {
 
   // Encoding type on input data, if any
   std::string encoding = "";
-  // Multiplier for allocating conversion buffer memory; X * encoded size
-  double buffer_safety_factor = 2;
   // Whether to use the global CPU thread pool
   bool use_threads = true;
   // Block size we request from the IO layer; also determines the size of
   // chunks when use_threads is true
   int32_t block_size = 1 << 20;  // 1 MB
 
+  // Number of header rows to skip (not including the row of column names, if any)
+  int32_t skip_rows = 0;
+  // Column names (if empty, will be read from first row after 'skip_rows')
+  std::vector<std::string> column_names;
+
   static ReadOptions Defaults();
 };
 
 }  // namespace fwfr
-}  // namespace arrow
 
 #endif  // FWFR_OPTIONS_H

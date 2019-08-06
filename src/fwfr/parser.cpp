@@ -32,14 +32,13 @@
 #include <arrow/status.h>
 #include <arrow/util/logging.h>
 
-namespace arrow {
 namespace fwfr {
 
-static Status ParseError(const char* message) {
-  return Status::Invalid("FWF parse error: ", message);
+static arrow::Status ParseError(const char* message) {
+  return arrow::Status::Invalid("FWF parse error: ", message);
 }
 
-static Status MismatchingColumns(int32_t expected, int32_t actual) {
+static arrow::Status MismatchingColumns(int32_t expected, int32_t actual) {
   char s[50];
   snprintf(s, sizeof(s), "Expected %d columns, got %d", expected, actual);
   return ParseError(s);
@@ -47,17 +46,42 @@ static Status MismatchingColumns(int32_t expected, int32_t actual) {
 
 static inline bool IsControlChar(uint8_t c) { return c < ' '; }
 
+int32_t SkipRows(const uint8_t* data, uint32_t size, int32_t num_rows,
+                 const uint8_t** out_data) {
+  const auto end = data + size;
+  int32_t skipped_rows = 0;
+  *out_data = data;
+
+  for (; skipped_rows < num_rows; ++skipped_rows) {
+    uint8_t c;
+    do  {
+      while (ARROW_PREDICT_FALSE(data < end && !IsControlChar(*data))) {
+        ++data;
+      }
+      if (ARROW_PREDICT_FALSE(data == end)) {
+        return skipped_rows;
+      }
+      c = *data++;
+    } while (c != '\r' && c != '\n');
+    if (c == '\r' && data < end && *data == '\n') {
+      ++data;
+    }
+    *out_data = data;
+  }
+  return skipped_rows;
+}
+
 // A helper class allocating the buffer for parsed values and writing into it
 // without any further resizes, except at the end.
 class BlockParser::PresizedParsedWriter {
  public:
-  PresizedParsedWriter(MemoryPool* pool, uint32_t size)
+  PresizedParsedWriter(arrow::MemoryPool* pool, uint32_t size)
       : parsed_size_(0), parsed_capacity_(size) {
     ARROW_CHECK_OK(AllocateResizableBuffer(pool, parsed_capacity_, &parsed_buffer_));
     parsed_ = parsed_buffer_->mutable_data();
   }
 
-  void Finish(std::shared_ptr<Buffer>* out_parsed) {
+  void Finish(std::shared_ptr<arrow::Buffer>* out_parsed) {
     ARROW_CHECK_OK(parsed_buffer_->Resize(parsed_size_));
     *out_parsed = parsed_buffer_;
   }
@@ -75,7 +99,7 @@ class BlockParser::PresizedParsedWriter {
   int64_t size() { return parsed_size_; }
 
  protected:
-  std::shared_ptr<ResizableBuffer> parsed_buffer_;
+  std::shared_ptr<arrow::ResizableBuffer> parsed_buffer_;
   uint8_t* parsed_;
   int64_t parsed_size_;
   int64_t parsed_capacity_;
@@ -88,7 +112,7 @@ class BlockParser::PresizedParsedWriter {
 // efficiently presize the target area for a given number of rows.
 class BlockParser::ResizableValuesWriter {
  public:
-  explicit ResizableValuesWriter(MemoryPool* pool)
+  explicit ResizableValuesWriter(arrow::MemoryPool* pool)
       : values_size_(0), values_capacity_(256) {
     ARROW_CHECK_OK(AllocateResizableBuffer(pool, values_capacity_ * sizeof(*values_),
                                            &values_buffer_));
@@ -100,7 +124,7 @@ class BlockParser::ResizableValuesWriter {
     PushValue({static_cast<uint32_t>(parsed_writer.size()) & 0x7fffffffU});
   }
 
-  void Finish(std::shared_ptr<Buffer>* out_values) {
+  void Finish(std::shared_ptr<arrow::Buffer>* out_values) {
     ARROW_CHECK_OK(values_buffer_->Resize(values_size_ * sizeof(*values_)));
     *out_values = values_buffer_;
   }
@@ -127,7 +151,7 @@ class BlockParser::ResizableValuesWriter {
     values_[values_size_++] = v;
   }
 
-  std::shared_ptr<ResizableBuffer> values_buffer_;
+  std::shared_ptr<arrow::ResizableBuffer> values_buffer_;
   ValueDesc* values_;
   int64_t values_size_;
   int64_t values_capacity_;
@@ -141,7 +165,7 @@ class BlockParser::ResizableValuesWriter {
 // faster FWF parsing code.
 class BlockParser::PresizedValuesWriter {
  public:
-  PresizedValuesWriter(MemoryPool* pool, int32_t num_rows, int32_t num_cols)
+  PresizedValuesWriter(arrow::MemoryPool* pool, int32_t num_rows, int32_t num_cols)
       : values_size_(0), values_capacity_(1 + num_rows * num_cols) {
     ARROW_CHECK_OK(AllocateResizableBuffer(pool, values_capacity_ * sizeof(*values_),
                                            &values_buffer_));
@@ -153,7 +177,7 @@ class BlockParser::PresizedValuesWriter {
     PushValue({static_cast<uint32_t>(parsed_writer.size()) & 0x7fffffffU});
   }
 
-  void Finish(std::shared_ptr<Buffer>* out_values) {
+  void Finish(std::shared_ptr<arrow::Buffer>* out_values) {
     ARROW_CHECK_OK(values_buffer_->Resize(values_size_ * sizeof(*values_)));
     *out_values = values_buffer_;
   }
@@ -176,7 +200,7 @@ class BlockParser::PresizedValuesWriter {
     values_[values_size_++] = v;
   }
 
-  std::shared_ptr<ResizableBuffer> values_buffer_;
+  std::shared_ptr<arrow::ResizableBuffer> values_buffer_;
   ValueDesc* values_;
   int64_t values_size_;
   const int64_t values_capacity_;
@@ -185,9 +209,9 @@ class BlockParser::PresizedValuesWriter {
 };
 
 template <typename ValuesWriter, typename ParsedWriter>
-Status BlockParser::ParseLine(ValuesWriter* values_writer, ParsedWriter* parsed_writer,
-                              const char* data, const char* data_end, bool is_final,
-                              const char** out_data) {
+arrow::Status BlockParser::ParseLine(ValuesWriter* values_writer, ParsedWriter* parsed_writer,
+                                     const char* data, const char* data_end, bool is_final,
+                                     const char** out_data) {
   int32_t num_cols = 0;
   int32_t cur_field_index = 0;
   int32_t cur_field = 0;
@@ -283,7 +307,7 @@ LineEnd:
   DCHECK_EQ(num_cols_, options_.field_widths.size());
   ++num_rows_;
   *out_data = data;
-  return Status::OK();
+  return arrow::Status::OK();
 
 AbortLine:
   // Not a full line except perhaps if in final block
@@ -297,20 +321,20 @@ AbortLine:
     }
     ++num_rows_;
     *out_data = data;
-    return Status::OK();
+    return arrow::Status::OK();
   }
   // Truncated line at end of block, rewind parsed state
   values_writer->RollbackLine();
   parsed_writer->RollbackLine();
-  return Status::OK();
+  return arrow::Status::OK();
 
 EmptyLine:
   *out_data = data;
-  return Status::OK();
+  return arrow::Status::OK();
 }
 
 template <typename ValuesWriter, typename ParsedWriter>
-Status BlockParser::ParseChunk(ValuesWriter* values_writer, ParsedWriter* parsed_writer,
+arrow::Status BlockParser::ParseChunk(ValuesWriter* values_writer, ParsedWriter* parsed_writer,
                                const char* data, const char* data_end, bool is_final,
                                int32_t rows_in_chunk, const char** out_data,
                                bool* finished_parsing) {
@@ -329,17 +353,17 @@ Status BlockParser::ParseChunk(ValuesWriter* values_writer, ParsedWriter* parsed
     --rows_in_chunk;
   }
   // Append new buffers and update size
-  std::shared_ptr<Buffer> values_buffer;
+  std::shared_ptr<arrow::Buffer> values_buffer;
   values_writer->Finish(&values_buffer);
   if (values_buffer->size() > 0) {
     values_size_ += static_cast<int32_t>(values_buffer->size() / sizeof(ValueDesc) - 1);
     values_buffers_.push_back(std::move(values_buffer));
   }
   *out_data = data;
-  return Status::OK();
+  return arrow::Status::OK();
 }
 
-Status BlockParser::DoParse(const char* start, uint32_t size, bool is_final,
+arrow::Status BlockParser::DoParse(const char* start, uint32_t size, bool is_final,
                             uint32_t* out_size) {
   num_rows_ = 0;
   values_size_ = 0;
@@ -362,8 +386,8 @@ Status BlockParser::DoParse(const char* start, uint32_t size, bool is_final,
     values_writer.Start(parsed_writer);
 
     RETURN_NOT_OK(ParseChunk(&values_writer, &parsed_writer, data,
-                                                 data_end, is_final, rows_in_chunk, &data,
-                                                 &finished_parsing));
+                             data_end, is_final, rows_in_chunk, &data,
+                             &finished_parsing));
     if (num_cols_ == -1) {
       return ParseError("Empty FWF file or block: cannot infer number of columns");
     }
@@ -384,8 +408,8 @@ Status BlockParser::DoParse(const char* start, uint32_t size, bool is_final,
     values_writer.Start(parsed_writer);
 
     RETURN_NOT_OK(ParseChunk(&values_writer, &parsed_writer, data,
-                                                 data_end, is_final, rows_in_chunk, &data,
-                                                 &finished_parsing));
+                             data_end, is_final, rows_in_chunk, &data,
+                             &finished_parsing));
   }
 
   parsed_writer.Finish(&parsed_buffer_);
@@ -410,22 +434,21 @@ Status BlockParser::DoParse(const char* start, uint32_t size, bool is_final,
   }
 #endif
   *out_size = static_cast<uint32_t>(data - start);
-  return Status::OK();
+  return arrow::Status::OK();
 }
 
-Status BlockParser::Parse(const char* data, uint32_t size, uint32_t* out_size) {
+arrow::Status BlockParser::Parse(const char* data, uint32_t size, uint32_t* out_size) {
   return DoParse(data, size, false /* is_final */, out_size);
 }
 
-Status BlockParser::ParseFinal(const char* data, uint32_t size, uint32_t* out_size) {
+arrow::Status BlockParser::ParseFinal(const char* data, uint32_t size, uint32_t* out_size) {
   return DoParse(data, size, true /* is_final */, out_size);
 }
 
-BlockParser::BlockParser(MemoryPool* pool, ParseOptions options, int32_t num_cols, int32_t max_num_rows)
+BlockParser::BlockParser(arrow::MemoryPool* pool, ParseOptions options, int32_t num_cols, int32_t max_num_rows)
     : pool_(pool), options_(options), num_cols_(num_cols), max_num_rows_(max_num_rows) {}
 
 BlockParser::BlockParser(ParseOptions options, int32_t num_cols, int32_t max_num_rows)
-    : BlockParser(default_memory_pool(), options, num_cols, max_num_rows) {}
+    : BlockParser(arrow::default_memory_pool(), options, num_cols, max_num_rows) {}
 
 }  // namespace fwfr
-}  // namespace arrow

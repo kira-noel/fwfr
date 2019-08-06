@@ -34,7 +34,6 @@
 #include <arrow/util/macros.h>
 #include <arrow/util/visibility.h>
 
-namespace arrow {
 namespace fwfr {
 
 /// \class Chunker
@@ -55,13 +54,13 @@ class ARROW_EXPORT Chunker {
   ///
   /// Process a block of FWF data, reading up to size bytes.
   /// The number of bytes in the chunk is returned in out_size.
-  Status Process(const char* data, uint32_t size, uint32_t* out_size);
+  arrow::Status Process(const char* data, uint32_t size, uint32_t* out_size);
 
  protected:
   ARROW_DISALLOW_COPY_AND_ASSIGN(Chunker);
 
   // Like Process(), but specialized for some parsing options
-  Status ProcessSpecialized(const char* data, uint32_t size, uint32_t* out_size);
+  arrow::Status ProcessSpecialized(const char* data, uint32_t size, uint32_t* out_size);
 
   // Detect a single line from the data pointer. Return the line end,
   // or nullptr if the remaining line is truncated.
@@ -71,6 +70,5 @@ class ARROW_EXPORT Chunker {
 };
 
 }  // namespace fwfr
-}  // namespace arrow
 
 #endif  // FWFR_CHUNKER_H

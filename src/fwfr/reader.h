@@ -40,13 +40,13 @@
 #include <unicode/uclean.h>
 
 namespace arrow {
+    class MemoryPool;
+    class Table;
 
-class MemoryPool;
-class Table;
-
-namespace io {
-class InputStream;
-}  // namespace io
+    namespace io {
+        class InputStream;
+    }
+}
 
 namespace fwfr {
 
@@ -54,16 +54,15 @@ class ARROW_EXPORT TableReader {
  public:
   virtual ~TableReader() = default;
 
-  virtual Status Read(std::shared_ptr<Table>* out) = 0;
+  virtual arrow::Status Read(std::shared_ptr<arrow::Table>* out) = 0;
     
   static int add(int a, int b);
 
-  static Status Make(MemoryPool* pool, std::shared_ptr<io::InputStream> input,
-                     const ReadOptions&, const ParseOptions&, const ConvertOptions&,
-                     std::shared_ptr<TableReader>* out);
+  static arrow::Status Make(arrow::MemoryPool* pool, std::shared_ptr<arrow::io::InputStream> input,
+                            const ReadOptions&, const ParseOptions&, const ConvertOptions&,
+                            std::shared_ptr<TableReader>* out);
 };
 
 }  // namespace fwfr
-}  // namespace arrow
 
 #endif  // FWFR_READER_H

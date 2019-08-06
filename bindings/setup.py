@@ -59,7 +59,6 @@ setup(
     ext_modules=cythonize(ext_modules),
     cmdclass={'build_ext': my_build_ext},
     packages=find_packages(),
-    install_requires=['pyarrow', 'numpy'],
     python_requires='>=3.7,<3.8',
     package_data={
         '':['*.fwf', '*.bin', '*.so', '*.pxd', '*.h', '*.pyx'],

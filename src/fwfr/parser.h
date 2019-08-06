@@ -38,12 +38,18 @@
 #include <arrow/util/visibility.h>
 
 namespace arrow {
-
-class MemoryPool;
+    class MemoryPool;
+}
 
 namespace fwfr {
 
 constexpr int32_t kMaxParserNumRows = 100000;
+
+/// Skip at most num_rows from the given input. The input pointer is updated
+/// and the number of actually skipped rows is returned (may be less than
+/// requested if the input is too short).
+ARROW_EXPORT int32_t SkipRows(const uint8_t* data, uint32_t size, int32_t num_rows,
+                              const uint8_t** out_data);
 
 /// \class BlockParser
 /// \brief A reusable block-based parser for FWF data
@@ -62,20 +68,20 @@ class ARROW_EXPORT BlockParser {
  public:
   explicit BlockParser(ParseOptions options, int32_t num_cols = -1,
                        int32_t max_num_rows = kMaxParserNumRows);
-  explicit BlockParser(MemoryPool* pool, ParseOptions options, 
+  explicit BlockParser(arrow::MemoryPool* pool, ParseOptions options, 
                        int32_t num_cols = -1, int32_t max_num_rows = kMaxParserNumRows);
 
   /// \brief Parse a block of data
   ///
   /// Parse a block of FWF data, ingesting up to max_num_rows rows.
   /// The number of bytes actually parsed is returned in out_size.
-  Status Parse(const char* data, uint32_t size, uint32_t* out_size);
+  arrow::Status Parse(const char* data, uint32_t size, uint32_t* out_size);
 
   /// \brief Parse the final block of data
   ///
   /// Like Parse(), but called with the final block in a file.
   /// The last row may lack a trailing line separator.
-  Status ParseFinal(const char* data, uint32_t size, uint32_t* out_size);
+  arrow::Status ParseFinal(const char* data, uint32_t size, uint32_t* out_size);
 
   /// \brief Return the number of parsed rows
   int32_t num_rows() const { return num_rows_; }
@@ -89,7 +95,7 @@ class ARROW_EXPORT BlockParser {
   /// The signature of the visitor is
   /// Status(const uint8_t* data, uint32_t size)
   template <typename Visitor>
-  Status VisitColumn(int32_t col_index, Visitor&& visit) const {
+  arrow::Status VisitColumn(int32_t col_index, Visitor&& visit) const {
     for (size_t buf_index = 0; buf_index < values_buffers_.size(); ++buf_index) {
       const auto& values_buffer = values_buffers_[buf_index];
       const auto values = reinterpret_cast<const ValueDesc*>(values_buffer->data());
@@ -101,26 +107,40 @@ class ARROW_EXPORT BlockParser {
         ARROW_RETURN_NOT_OK(visit(parsed_ + start, stop - start));
       }
     }
-    return Status::OK();
+    return arrow::Status::OK();
+  }
+
+  template <typename Visitor>
+  arrow::Status VisitLastRow(Visitor&& visit) const {
+    const auto& values_buffer = values_buffers_.back();
+    const auto values = reinterpret_cast<const ValueDesc*>(values_buffer->data());
+    const auto start_pos = 
+        static_cast<int32_t>(values_buffer->size() / sizeof(ValueDesc)) - num_cols_ - 1;
+    for (int32_t col_index = 0; col_index < num_cols_; ++col_index) {
+      auto start = values[start_pos + col_index].offset;
+      auto stop = values[start_pos + col_index + 1].offset;
+      ARROW_RETURN_NOT_OK(visit(parsed_ + start, stop - start));
+    }
+    return arrow::Status::OK();
   }
 
  protected:
   ARROW_DISALLOW_COPY_AND_ASSIGN(BlockParser);
 
-  Status DoParse(const char* data, uint32_t size, bool is_final, uint32_t* out_size);
+  arrow::Status DoParse(const char* data, uint32_t size, bool is_final, uint32_t* out_size);
   
   template <typename ValuesWriter, typename ParsedWriter>
-  Status ParseChunk(ValuesWriter* values_writer, ParsedWriter* parsed_writer,
-                    const char* data, const char* data_end, bool is_final,
-                    int32_t rows_in_chunk, const char** out_data, bool* finished_parsing);
+  arrow::Status ParseChunk(ValuesWriter* values_writer, ParsedWriter* parsed_writer,
+                           const char* data, const char* data_end, bool is_final,
+                           int32_t rows_in_chunk, const char** out_data, bool* finished_parsing);
 
   // Parse a single line from the data pointer
   template <typename ValuesWriter, typename ParsedWriter>
-  Status ParseLine(ValuesWriter* values_writer, ParsedWriter* parsed_writer,
+  arrow::Status ParseLine(ValuesWriter* values_writer, ParsedWriter* parsed_writer,
                    const char* data, const char* data_end, bool is_final,
                    const char** out_data);
 
-  MemoryPool* pool_;
+  arrow::MemoryPool* pool_;
   const ParseOptions options_;
   // The number of rows parsed from the block
   int32_t num_rows_;
@@ -134,8 +154,8 @@ class ARROW_EXPORT BlockParser {
     uint32_t offset : 31;
   };
 
-  std::vector<std::shared_ptr<Buffer>> values_buffers_;
-  std::shared_ptr<Buffer> parsed_buffer_;
+  std::vector<std::shared_ptr<arrow::Buffer>> values_buffers_;
+  std::shared_ptr<arrow::Buffer> parsed_buffer_;
   const uint8_t* parsed_;
   int32_t values_size_;
   int32_t parsed_size_;
@@ -146,6 +166,5 @@ class ARROW_EXPORT BlockParser {
 };
 
 }  // namespace fwfr
-}  // namespace arrow
 
 #endif  // FWFR_PARSER_H

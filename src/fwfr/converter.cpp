@@ -39,20 +39,19 @@
 #include <arrow/util/parsing.h>  // IWYU pragma: keep
 #include <arrow/util/trie.h>
 
-namespace arrow {
 namespace fwfr {
 
-using internal::StringConverter;
-using internal::Trie;
-using internal::TrieBuilder;
+using arrow::internal::StringConverter;
+using arrow::internal::Trie;
+using arrow::internal::TrieBuilder;
 
 namespace {
 
-Status GenericConversionError(const std::shared_ptr<DataType>& type, const uint8_t* data,
+arrow::Status GenericConversionError(const std::shared_ptr<arrow::DataType>& type, const uint8_t* data,
                               uint32_t size) {
-  return Status::Invalid("FWF conversion error to ", type->ToString(),
-                         ": invalid value '",
-                         std::string(reinterpret_cast<const char*>(data), size), "'");
+  return arrow::Status::Invalid("FWF conversion error to ", type->ToString(),
+                                ": invalid value '",
+                                std::string(reinterpret_cast<const char*>(data), size), "'");
 }
 
 inline bool IsWhitespace(uint8_t c) {
@@ -62,13 +61,13 @@ inline bool IsWhitespace(uint8_t c) {
   return c == ' ' || c == '\t';
 }
 
-Status InitializeTrie(const std::vector<std::string>& inputs, Trie* trie) {
-  TrieBuilder builder;
+arrow::Status InitializeTrie(const std::vector<std::string>& inputs, arrow::internal::Trie* trie) {
+  arrow::internal::TrieBuilder builder;
   for (const auto& s : inputs) {
     RETURN_NOT_OK(builder.Append(s, true /* allow_duplicates */));
   }
   *trie = builder.Finish();
-  return Status::OK();
+  return arrow::Status::OK();
 }
 
 class ConcreteConverter : public Converter {
@@ -76,18 +75,18 @@ class ConcreteConverter : public Converter {
   using Converter::Converter;
 
  protected:
-  Status Initialize() override;
+  arrow::Status Initialize() override;
   inline bool IsNull(const uint8_t* data, uint32_t size);
 
-  Trie null_trie_;
+  arrow::internal::Trie null_trie_;
 };
 
-Status ConcreteConverter::Initialize() {
+arrow::Status ConcreteConverter::Initialize() {
   return InitializeTrie(options_.null_values, &null_trie_);
 }
 
 bool ConcreteConverter::IsNull(const uint8_t* data, uint32_t size) {
-  return null_trie_.Find(util::string_view(reinterpret_cast<const char*>(data), size)) >=
+  return null_trie_.Find(arrow::util::string_view(reinterpret_cast<const char*>(data), size)) >=
          0;
 }
 
@@ -98,15 +97,15 @@ class NullConverter : public ConcreteConverter {
  public:
   using ConcreteConverter::ConcreteConverter;
 
-  Status Convert(const BlockParser& parser, int32_t col_index,
-                 std::shared_ptr<Array>* out) override;
+  arrow::Status Convert(const BlockParser& parser, int32_t col_index,
+                 std::shared_ptr<arrow::Array>* out) override;
 };
 
-Status NullConverter::Convert(const BlockParser& parser, int32_t col_index,
-                              std::shared_ptr<Array>* out) {
-  NullBuilder builder(pool_);
+arrow::Status NullConverter::Convert(const BlockParser& parser, int32_t col_index,
+                                     std::shared_ptr<arrow::Array>* out) {
+  arrow::NullBuilder builder(pool_);
 
-  auto visit = [&](const uint8_t* data, uint32_t size) -> Status {
+  auto visit = [&](const uint8_t* data, uint32_t size) -> arrow::Status {
     if (ARROW_PREDICT_TRUE(IsNull(data, size))) {
       return builder.AppendNull();
     } else {
@@ -116,7 +115,7 @@ Status NullConverter::Convert(const BlockParser& parser, int32_t col_index,
   RETURN_NOT_OK(parser.VisitColumn(col_index, visit));
   RETURN_NOT_OK(builder.Finish(out));
 
-  return Status::OK();
+  return arrow::Status::OK();
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -127,14 +126,14 @@ class VarSizeBinaryConverter : public ConcreteConverter {
  public:
   using ConcreteConverter::ConcreteConverter;
 
-  Status Convert(const BlockParser& parser, int32_t col_index,
-                 std::shared_ptr<Array>* out) override {
-    using BuilderType = typename TypeTraits<T>::BuilderType;
+  arrow::Status Convert(const BlockParser& parser, int32_t col_index,
+                        std::shared_ptr<arrow::Array>* out) override {
+    using BuilderType = typename arrow::TypeTraits<T>::BuilderType;
     BuilderType builder(pool_);
 
-    auto visit_non_null = [&](const uint8_t* data, uint32_t size) -> Status {
-      /*if (CheckUTF8 && ARROW_PREDICT_FALSE(!util::ValidateUTF8(data, size))) {
-        return Status::Invalid("FWF conversion error to ", type_->ToString(),
+    auto visit_non_null = [&](const uint8_t* data, uint32_t size) -> arrow::Status {
+      /*if (CheckUTF8 && ARROW_PREDICT_FALSE(!arrow::util::ValidateUTF8(data, size))) {
+        return arrow::Status::Invalid("FWF conversion error to ", type_->ToString(),
                                ": invalid UTF8 data");
       }*/
       // Skip trailing whitespace
@@ -152,19 +151,35 @@ class VarSizeBinaryConverter : public ConcreteConverter {
           --size;
           ++data;
         }
-      } 
+      }  
       builder.UnsafeAppend(data, size);
-      return Status::OK();
+      return arrow::Status::OK();
     };
 
     RETURN_NOT_OK(builder.Resize(parser.num_rows()));
     RETURN_NOT_OK(builder.ReserveData(parser.num_bytes()));
 
     if (options_.strings_can_be_null) {
-      auto visit = [&](const uint8_t* data, uint32_t size) -> Status {
+      auto visit = [&](const uint8_t* data, uint32_t size) -> arrow::Status {
+        // Skip trailing whitespace
+        if (ARROW_PREDICT_TRUE(size > 0) &&
+            ARROW_PREDICT_FALSE(IsWhitespace(data[size - 1]))) {
+          const uint8_t* p = data + size - 1;
+          while (size > 0 && IsWhitespace(*p)) {
+            --size;
+            --p;
+          }
+        }
+        // Skip leading whitespace
+        if (ARROW_PREDICT_TRUE(size > 0) && ARROW_PREDICT_FALSE(IsWhitespace(data[0]))) {
+          while (size > 0 && IsWhitespace(*data)) {
+            --size;
+            ++data;
+          }
+        } 
         if (IsNull(data, size)) {
           builder.UnsafeAppendNull();
-          return Status::OK();
+          return arrow::Status::OK();
         } else {
           return visit_non_null(data, size);
         }
@@ -176,12 +191,12 @@ class VarSizeBinaryConverter : public ConcreteConverter {
 
     RETURN_NOT_OK(builder.Finish(out));
 
-    return Status::OK();
+    return arrow::Status::OK();
   }
 
  protected:
-  Status Initialize() override {
-    //util::InitializeUTF8();
+    arrow::Status Initialize() override {
+    //arrow::util::InitializeUTF8();
     return ConcreteConverter::Initialize();
   }
 };
@@ -193,19 +208,19 @@ class FixedSizeBinaryConverter : public ConcreteConverter {
  public:
   using ConcreteConverter::ConcreteConverter;
 
-  Status Convert(const BlockParser& parser, int32_t col_index,
-                 std::shared_ptr<Array>* out) override;
+  arrow::Status Convert(const BlockParser& parser, int32_t col_index,
+                        std::shared_ptr<arrow::Array>* out) override;
 };
 
-Status FixedSizeBinaryConverter::Convert(const BlockParser& parser, int32_t col_index,
-                                         std::shared_ptr<Array>* out) {
-  FixedSizeBinaryBuilder builder(type_, pool_);
+arrow::Status FixedSizeBinaryConverter::Convert(const BlockParser& parser, int32_t col_index,
+                                                std::shared_ptr<arrow::Array>* out) {
+  arrow::FixedSizeBinaryBuilder builder(type_, pool_);
   const uint32_t byte_width = static_cast<uint32_t>(builder.byte_width());
 
-  auto visit = [&](const uint8_t* data, uint32_t size) -> Status {
+  auto visit = [&](const uint8_t* data, uint32_t size) -> arrow::Status {
     if (ARROW_PREDICT_FALSE(size != byte_width)) {
-      return Status::Invalid("FWF conversion error to ", type_->ToString(), ": got a ",
-                             size, "-byte long string");
+      return arrow::Status::Invalid("FWF conversion error to ", type_->ToString(), ": got a ",
+                                    size, "-byte long string");
     }
     return builder.Append(data);
   };
@@ -213,7 +228,7 @@ Status FixedSizeBinaryConverter::Convert(const BlockParser& parser, int32_t col_
   RETURN_NOT_OK(parser.VisitColumn(col_index, visit));
   RETURN_NOT_OK(builder.Finish(out));
 
-  return Status::OK();
+  return arrow::Status::OK();
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -223,38 +238,54 @@ class BooleanConverter : public ConcreteConverter {
  public:
   using ConcreteConverter::ConcreteConverter;
 
-  Status Convert(const BlockParser& parser, int32_t col_index,
-                 std::shared_ptr<Array>* out) override;
+  arrow::Status Convert(const BlockParser& parser, int32_t col_index,
+                        std::shared_ptr<arrow::Array>* out) override;
 
  protected:
-  Status Initialize() override {
+  arrow::Status Initialize() override {
     RETURN_NOT_OK(InitializeTrie(options_.true_values, &true_trie_));
     RETURN_NOT_OK(InitializeTrie(options_.false_values, &false_trie_));
     return ConcreteConverter::Initialize();
   }
 
-  Trie true_trie_;
-  Trie false_trie_;
+  arrow::internal::Trie true_trie_;
+  arrow::internal::Trie false_trie_;
 };
 
-Status BooleanConverter::Convert(const BlockParser& parser, int32_t col_index,
-                                 std::shared_ptr<Array>* out) {
-  BooleanBuilder builder(type_, pool_);
+arrow::Status BooleanConverter::Convert(const BlockParser& parser, int32_t col_index,
+                                        std::shared_ptr<arrow::Array>* out) {
+    arrow::BooleanBuilder builder(type_, pool_);
 
-  auto visit = [&](const uint8_t* data, uint32_t size) -> Status {
+  auto visit = [&](const uint8_t* data, uint32_t size) -> arrow::Status {
+    // Skip trailing whitespace
+    if (ARROW_PREDICT_TRUE(size > 0) &&
+        ARROW_PREDICT_FALSE(IsWhitespace(data[size - 1]))) {
+      const uint8_t* p = data + size - 1;
+      while (size > 0 && IsWhitespace(*p)) {
+        --size;
+        --p;
+      }
+    }
+    // Skip leading whitespace
+    if (ARROW_PREDICT_TRUE(size > 0) && ARROW_PREDICT_FALSE(IsWhitespace(data[0]))) {
+      while (size > 0 && IsWhitespace(*data)) {
+        --size;
+        ++data;
+      }
+    } 
     if (IsNull(data, size)) {
       builder.UnsafeAppendNull();
-      return Status::OK();
+      return arrow::Status::OK();
     }
-    if (false_trie_.Find(util::string_view(reinterpret_cast<const char*>(data), size)) >=
+    if (false_trie_.Find(arrow::util::string_view(reinterpret_cast<const char*>(data), size)) >=
         0) {
       builder.UnsafeAppend(false);
-      return Status::OK();
+      return arrow::Status::OK();
     }
-    if (true_trie_.Find(util::string_view(reinterpret_cast<const char*>(data), size)) >=
+    if (true_trie_.Find(arrow::util::string_view(reinterpret_cast<const char*>(data), size)) >=
         0) {
       builder.UnsafeAppend(true);
-      return Status::OK();
+      return arrow::Status::OK();
     }
     return GenericConversionError(type_, data, size);
   };
@@ -262,7 +293,7 @@ Status BooleanConverter::Convert(const BlockParser& parser, int32_t col_index,
   RETURN_NOT_OK(parser.VisitColumn(col_index, visit));
   RETURN_NOT_OK(builder.Finish(out));
 
-  return Status::OK();
+  return arrow::Status::OK();
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -273,26 +304,113 @@ class NumericConverter : public ConcreteConverter {
  public:
   using ConcreteConverter::ConcreteConverter;
 
-  Status Convert(const BlockParser& parser, int32_t col_index,
-                 std::shared_ptr<Array>* out) override;
+  arrow::Status Convert(const BlockParser& parser, int32_t col_index,
+                        std::shared_ptr<arrow::Array>* out) override;
 };
 
 template <typename T>
-Status NumericConverter<T>::Convert(const BlockParser& parser, int32_t col_index,
-                                    std::shared_ptr<Array>* out) {
-  using BuilderType = typename TypeTraits<T>::BuilderType;
+arrow::Status NumericConverter<T>::Convert(const BlockParser& parser, int32_t col_index,
+                                           std::shared_ptr<arrow::Array>* out) {
+  using BuilderType = typename arrow::TypeTraits<T>::BuilderType;
   using value_type = typename StringConverter<T>::value_type;
 
   BuilderType builder(type_, pool_);
   StringConverter<T> converter;
 
-  auto visit = [&](const uint8_t* data, uint32_t size) -> Status {
+  auto visit = [&](const uint8_t* data, uint32_t size) -> arrow::Status {
     value_type value;
+    // Skip trailing whitespace
+    if (ARROW_PREDICT_TRUE(size > 0) &&
+        ARROW_PREDICT_FALSE(IsWhitespace(data[size - 1]))) {
+      const uint8_t* p = data + size - 1;
+      while (size > 0 && IsWhitespace(*p)) {
+        --size;
+        --p;
+      }
+    }
+    // Skip leading whitespace
+    if (ARROW_PREDICT_TRUE(size > 0) && ARROW_PREDICT_FALSE(IsWhitespace(data[0]))) {
+      while (size > 0 && IsWhitespace(*data)) {
+        --size;
+        ++data;
+      }
+    } 
     if (IsNull(data, size)) {
       builder.UnsafeAppendNull();
-      return Status::OK();
+      return arrow::Status::OK();
+    } 
+    // Handle COBOL data format
+    if (options_.is_cobol) {
+      bool is_modified = false;
+      const char last = *(data + size - 1);
+      char new_data[size + 1];  // the existing data object is read-only
+
+      // Check positive map values
+      // If the last character maps to ConvertOptions::pos_values,
+      // switch last character to corresponding value.
+      auto it = options_.pos_values.find(last);
+      if (it != options_.pos_values.end()) {
+        is_modified = true;
+        for (int i=0; i < size; i++) {
+          new_data[i] = data[i];
+        }
+        new_data[size - 1] = it->second;
+      }
+
+      // Check negative map values
+      // If the last character maps to ConvertOptions::neg_values,
+      // switch last character to corresponding value and add negative sign.
+      it = options_.neg_values.find(last);
+      if (it != options_.neg_values.end()) {
+        is_modified = true;
+        size++;
+        for (int i=size-2; i >= 0; i--) {
+          new_data[i + 1] = *(data + i);
+        }
+        new_data[size - 1] = it->second;
+        new_data[0] = '-';
+      }
+      
+      // Determine datatype and value of data
+      if (is_modified) {
+        if (ARROW_PREDICT_FALSE(
+                    !converter(reinterpret_cast<const char*>(new_data), size, &value))) {
+          return GenericConversionError(type_, reinterpret_cast<const uint8_t*>(new_data), size);
+        }
+        builder.UnsafeAppend(value);
+        return arrow::Status::OK();
+      }
     }
-    if (!std::is_same<BooleanType, T>::value) {
+    if (ARROW_PREDICT_FALSE(
+            !converter(reinterpret_cast<const char*>(data), size, &value))) {
+      return GenericConversionError(type_, data, size);
+    }
+    builder.UnsafeAppend(value);
+    return arrow::Status::OK();
+  };
+  RETURN_NOT_OK(builder.Resize(parser.num_rows()));
+  RETURN_NOT_OK(parser.VisitColumn(col_index, visit));
+  RETURN_NOT_OK(builder.Finish(out));
+
+  return arrow::Status::OK();
+}
+
+/////////////////////////////////////////////////////////////////////////
+// Concrete Converter for timestamps
+
+class TimestampConverter : public ConcreteConverter {
+ public:
+  using ConcreteConverter::ConcreteConverter;
+
+  arrow::Status Convert(const BlockParser& parser, int32_t col_index,
+                        std::shared_ptr<arrow::Array>* out) override {
+    using value_type = arrow::TimestampType::c_type;
+
+    arrow::TimestampBuilder builder(type_, pool_);
+    StringConverter<arrow::TimestampType> converter(type_);
+
+    auto visit = [&](const uint8_t* data, uint32_t size) -> arrow::Status {
+      value_type value = 0;
       // Skip trailing whitespace
       if (ARROW_PREDICT_TRUE(size > 0) &&
           ARROW_PREDICT_FALSE(IsWhitespace(data[size - 1]))) {
@@ -309,53 +427,22 @@ Status NumericConverter<T>::Convert(const BlockParser& parser, int32_t col_index
           ++data;
         }
       }
-    }
-    if (ARROW_PREDICT_FALSE(
-            !converter(reinterpret_cast<const char*>(data), size, &value))) {
-      return GenericConversionError(type_, data, size);
-    }
-    builder.UnsafeAppend(value);
-    return Status::OK();
-  };
-  RETURN_NOT_OK(builder.Resize(parser.num_rows()));
-  RETURN_NOT_OK(parser.VisitColumn(col_index, visit));
-  RETURN_NOT_OK(builder.Finish(out));
-
-  return Status::OK();
-}
-
-/////////////////////////////////////////////////////////////////////////
-// Concrete Converter for timestamps
-
-class TimestampConverter : public ConcreteConverter {
- public:
-  using ConcreteConverter::ConcreteConverter;
-
-  Status Convert(const BlockParser& parser, int32_t col_index,
-                 std::shared_ptr<Array>* out) override {
-    using value_type = TimestampType::c_type;
-
-    TimestampBuilder builder(type_, pool_);
-    StringConverter<TimestampType> converter(type_);
-
-    auto visit = [&](const uint8_t* data, uint32_t size) -> Status {
-      value_type value = 0;
       if (IsNull(data, size)) {
         builder.UnsafeAppendNull();
-        return Status::OK();
+        return arrow::Status::OK();
       }
       if (ARROW_PREDICT_FALSE(
               !converter(reinterpret_cast<const char*>(data), size, &value))) {
         return GenericConversionError(type_, data, size);
       }
       builder.UnsafeAppend(value);
-      return Status::OK();
+      return arrow::Status::OK();
     };
     RETURN_NOT_OK(builder.Resize(parser.num_rows()));
     RETURN_NOT_OK(parser.VisitColumn(col_index, visit));
     RETURN_NOT_OK(builder.Finish(out));
 
-    return Status::OK();
+    return arrow::Status::OK();
   }
 };
 
@@ -364,13 +451,13 @@ class TimestampConverter : public ConcreteConverter {
 /////////////////////////////////////////////////////////////////////////
 // Base Converter class implementation
 
-Converter::Converter(const std::shared_ptr<DataType>& type, const ConvertOptions& options,
-                     MemoryPool* pool)
+Converter::Converter(const std::shared_ptr<arrow::DataType>& type, const ConvertOptions& options,
+                     arrow::MemoryPool* pool)
     : options_(options), pool_(pool), type_(type) {}
 
-Status Converter::Make(const std::shared_ptr<DataType>& type,
-                       const ConvertOptions& options, MemoryPool* pool,
-                       std::shared_ptr<Converter>* out) {
+arrow::Status Converter::Make(const std::shared_ptr<arrow::DataType>& type,
+                              const ConvertOptions& options, arrow::MemoryPool* pool,
+                              std::shared_ptr<Converter>* out) {
   Converter* result;
 
   switch (type->id()) {
@@ -379,29 +466,29 @@ Status Converter::Make(const std::shared_ptr<DataType>& type,
     result = new CONVERTER_TYPE(type, options, pool); \
     break;
 
-    CONVERTER_CASE(Type::NA, NullConverter)
-    CONVERTER_CASE(Type::INT8, NumericConverter<Int8Type>)
-    CONVERTER_CASE(Type::INT16, NumericConverter<Int16Type>)
-    CONVERTER_CASE(Type::INT32, NumericConverter<Int32Type>)
-    CONVERTER_CASE(Type::INT64, NumericConverter<Int64Type>)
-    CONVERTER_CASE(Type::UINT8, NumericConverter<UInt8Type>)
-    CONVERTER_CASE(Type::UINT16, NumericConverter<UInt16Type>)
-    CONVERTER_CASE(Type::UINT32, NumericConverter<UInt32Type>)
-    CONVERTER_CASE(Type::UINT64, NumericConverter<UInt64Type>)
-    CONVERTER_CASE(Type::FLOAT, NumericConverter<FloatType>)
-    CONVERTER_CASE(Type::DOUBLE, NumericConverter<DoubleType>)
-    CONVERTER_CASE(Type::BOOL, BooleanConverter)
-    CONVERTER_CASE(Type::TIMESTAMP, TimestampConverter)
-    CONVERTER_CASE(Type::BINARY, (VarSizeBinaryConverter<BinaryType>))
-    CONVERTER_CASE(Type::FIXED_SIZE_BINARY, FixedSizeBinaryConverter)
+    CONVERTER_CASE(arrow::Type::NA, NullConverter)
+    CONVERTER_CASE(arrow::Type::INT8, NumericConverter<arrow::Int8Type>)
+    CONVERTER_CASE(arrow::Type::INT16, NumericConverter<arrow::Int16Type>)
+    CONVERTER_CASE(arrow::Type::INT32, NumericConverter<arrow::Int32Type>)
+    CONVERTER_CASE(arrow::Type::INT64, NumericConverter<arrow::Int64Type>)
+    CONVERTER_CASE(arrow::Type::UINT8, NumericConverter<arrow::UInt8Type>)
+    CONVERTER_CASE(arrow::Type::UINT16, NumericConverter<arrow::UInt16Type>)
+    CONVERTER_CASE(arrow::Type::UINT32, NumericConverter<arrow::UInt32Type>)
+    CONVERTER_CASE(arrow::Type::UINT64, NumericConverter<arrow::UInt64Type>)
+    CONVERTER_CASE(arrow::Type::FLOAT, NumericConverter<arrow::FloatType>)
+    CONVERTER_CASE(arrow::Type::DOUBLE, NumericConverter<arrow::DoubleType>)
+    CONVERTER_CASE(arrow::Type::BOOL, BooleanConverter)
+    CONVERTER_CASE(arrow::Type::TIMESTAMP, TimestampConverter)
+    CONVERTER_CASE(arrow::Type::BINARY, (VarSizeBinaryConverter<arrow::BinaryType>))
+    CONVERTER_CASE(arrow::Type::FIXED_SIZE_BINARY, FixedSizeBinaryConverter)
 
-    case Type::STRING:
-      result = new VarSizeBinaryConverter<StringType>(type, options, pool);
+  case arrow::Type::STRING:
+      result = new VarSizeBinaryConverter<arrow::StringType>(type, options, pool);
       break;
 
     default: {
-      return Status::NotImplemented("FWF conversion to ", type->ToString(),
-                                    " is not supported");
+      return arrow::Status::NotImplemented("FWF conversion to ", type->ToString(),
+                                           " is not supported");
     }
 
 #undef CONVERTER_CASE
@@ -410,10 +497,9 @@ Status Converter::Make(const std::shared_ptr<DataType>& type,
   return result->Initialize();
 }
 
-Status Converter::Make(const std::shared_ptr<DataType>& type,
+arrow::Status Converter::Make(const std::shared_ptr<arrow::DataType>& type,
                        const ConvertOptions& options, std::shared_ptr<Converter>* out) {
-  return Make(type, options, default_memory_pool(), out);
+  return Make(type, options, arrow::default_memory_pool(), out);
 }
 
 }  // namespace fwfr
-}  // namespace arrow

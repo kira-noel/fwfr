@@ -59,21 +59,19 @@
 #include <unicode/uclean.h>
 
 namespace arrow {
+    class MemoryPool;
 
-class MemoryPool;
-
-namespace io {
-
-class InputStream;
-
-}  // namespace io
+    namespace io {
+        class InputStream;
+    }
+}
 
 namespace fwfr {
 
-using internal::GetCpuThreadPool;
-using internal::ThreadPool;
-using io::internal::ReadaheadBuffer;
-using io::internal::ReadaheadSpooler;
+using arrow::internal::GetCpuThreadPool;
+using arrow::internal::ThreadPool;
+using arrow::io::internal::ReadaheadBuffer;
+using arrow::io::internal::ReadaheadSpooler;
 
 static constexpr int64_t kDefaultLeftPadding = 2048;  // 2 kB
 static constexpr int64_t kDefaultRightPadding = 16;
@@ -89,7 +87,7 @@ inline bool IsWhitespace(uint8_t c) {
 // Base class for common functionality
 class BaseTableReader : public fwfr::TableReader {
  public:
-  BaseTableReader(MemoryPool* pool, const ReadOptions& read_options,
+  BaseTableReader(arrow::MemoryPool* pool, const ReadOptions& read_options,
                   const ParseOptions& parse_options,
                   const ConvertOptions& convert_options)
       : pool_(pool),
@@ -98,7 +96,7 @@ class BaseTableReader : public fwfr::TableReader {
         convert_options_(convert_options) {}
 
  protected:
-  Status ReadFirstBlock() {
+  arrow::Status ReadFirstBlock() {
     RETURN_NOT_OK(ReadNextBlock());
     const uint8_t* data;
     
@@ -106,11 +104,11 @@ class BaseTableReader : public fwfr::TableReader {
     RETURN_NOT_OK(extras::SkipUTF8BOM(cur_data_, cur_size_, &data));
     cur_size_ -= data - cur_data_;
     cur_data_ = data;
-    return Status::OK();
+    return arrow::Status::OK();
   }
 
   // Read a next data block, stitch it to trailing data
-  Status ReadNextBlock() {
+  arrow::Status ReadNextBlock() {
     bool trailing_data = cur_size_ > 0;
     ReadaheadBuffer rh;
 
@@ -126,10 +124,10 @@ class BaseTableReader : public fwfr::TableReader {
     if (!rh.buffer) {
       // EOF, let caller finish with existing data
       eof_ = true;
-      return Status::OK();
+      return arrow::Status::OK();
     }
 
-    std::shared_ptr<Buffer> new_block = rh.buffer;
+    std::shared_ptr<arrow::Buffer> new_block = rh.buffer;
     uint8_t* new_data = rh.buffer->mutable_data() + rh.left_padding;
     int64_t new_size = rh.buffer->size() - rh.left_padding - rh.right_padding;
     DCHECK_GT(new_size, 0);  // ensured by ReadaheadSpooler
@@ -140,41 +138,18 @@ class BaseTableReader : public fwfr::TableReader {
     //   * EBCDIC encodings need ",lfnl" appended to codeset name ("cp1047,lfnl")
     //     to properly handle newlines 
     if (read_options_.encoding != "") {
-        UErrorCode u_glob_status = U_ZERO_ERROR;
-        u_init(&u_glob_status);
-        assert(U_SUCCESS(u_glob_status));
-
-        UErrorCode uerr = U_ZERO_ERROR;
-        UConverter *uconv = ucnv_open(read_options_.encoding.c_str(), &uerr);
-        if (U_FAILURE(uerr)) {
-            return Status::Invalid(u_errorName(uerr));
+        int64_t encoded_size = new_size;
+        new_size = ucnv_toAlgorithmic(UCNV_UTF8, ucnv_, reinterpret_cast<char*>(new_data), 
+                                      new_size,  
+                                      reinterpret_cast<const char*>(new_data), 
+                                      new_size, &uerr_);
+        if (U_FAILURE(uerr_)) {
+            return arrow::Status::Invalid(u_errorName(uerr_));
         }
-
-        int64_t buf_size = int(new_size * read_options_.buffer_safety_factor);
-        char *buf = (char*)malloc(buf_size * sizeof(char));
-        if (buf == NULL) {
-            return Status::Invalid("Allocation for conversion buffer memory failed.");
+        if (encoded_size < new_size) {
+            return arrow::Status::Invalid("Decoded size larger than encoded size.",
+                    " Possible memory errors. ", encoded_size, " vs ", new_size);
         }
-        buf[buf_size] = {};
-        size_t decoded_size;
-        decoded_size = ucnv_toAlgorithmic(UCNV_UTF8, uconv, buf, buf_size,  
-                                          reinterpret_cast<const char*>(new_data), 
-                                          new_size, &uerr);
-
-        if (U_FAILURE(uerr)) {
-            return Status::Invalid(u_errorName(uerr));
-        }
-
-        // Copy malloc'd data into a Buffer
-        RETURN_NOT_OK(Buffer::FromString(std::string(buf), &new_block));
-
-        new_data = new_block->mutable_data();
-        new_size = decoded_size;
-
-        // Return memory
-        ucnv_close(uconv);
-        u_cleanup();
-        free(buf);
     }
 
     if (trailing_cr_ && new_data[0] == '\n') {
@@ -206,54 +181,77 @@ class BaseTableReader : public fwfr::TableReader {
     cur_block_ = new_block;
     cur_data_ = new_data;
     cur_size_ = new_size;
-    return Status::OK();
+    return arrow::Status::OK();
   }
 
   // Read header and column names from current block, create column builders
-  Status ProcessHeader() {
+  arrow::Status ProcessHeader() {
     DCHECK_GT(cur_size_, 0);
-    if (parse_options_.header_rows == 0) {
-      return Status::Invalid("header_rows == 0 needs explicit column names");
+    
+    if (read_options_.skip_rows) {
+        // Skip initial rows (potentially invalid FWF data)
+        auto data = cur_data_;
+        auto num_skipped_rows = SkipRows(cur_data_, static_cast<uint32_t>(cur_size_),
+                                         read_options_.skip_rows, &data);
+        cur_size_ -= data - cur_data_;
+            cur_data_ = data;
+            if (num_skipped_rows < read_options_.skip_rows) {
+                return arrow::Status::Invalid(
+                        "Could not skip initial ", read_options_.skip_rows,
+                        " rows from FWF data, "
+                        "either file is too short or header is larger than block size");
+            }
     }
 
-    BlockParser parser(pool_, parse_options_, num_cols_, parse_options_.header_rows);
+    if (read_options_.column_names.empty()) {
+        // Read one row with column names
+        BlockParser parser(pool_, parse_options_, num_cols_, 1);
+        uint32_t parsed_size = 0;
+        RETURN_NOT_OK(parser.Parse(reinterpret_cast<const char*>(cur_data_),
+                      static_cast<uint32_t>(cur_size_), &parsed_size));
+        if (parser.num_cols() == 0) {
+            return arrow::Status::Invalid("No columns in FWF");
+        } 
+        
+        if (parser.num_rows() != 1) {
+            return arrow::Status::Invalid(
+                    "Could not read column names from FWF data, either "
+                    "file is too short or header is larger than block size");
+        }
+        // Read column names from last header row
+        auto visit = [&](const uint8_t* data, uint32_t size) -> arrow::Status {
+            // Skip trailing whitespace
+            if (ARROW_PREDICT_TRUE(size > 0) && ARROW_PREDICT_FALSE(IsWhitespace(data[size - 1]))) {
+                const uint8_t* p = data + size - 1;
+                while (size > 0 && IsWhitespace(*p)) {
+                    --size;
+                    --p;
+                }
+            }
+            // Skip leading whitespace
+            if (ARROW_PREDICT_TRUE(size > 0) && ARROW_PREDICT_FALSE(IsWhitespace(data[0]))) {
+                while (size > 0 && IsWhitespace(*data)) {
+                    --size;
+                    ++data;
+                }
+            } 
+            column_names_.emplace_back(reinterpret_cast<const char*>(data), size);
+            return arrow::Status::OK();
+        };
+        RETURN_NOT_OK(parser.VisitLastRow(visit));
+        DCHECK_EQ(static_cast<size_t>(parser.num_cols()), column_names_.size());
+        // Skip parsed header row
+        cur_data_ += parsed_size;
+        cur_size_ -= parsed_size;
+    } else {
+        column_names_ = read_options_.column_names;
+    }
 
-    uint32_t parsed_size = 0;
-    RETURN_NOT_OK(parser.Parse(reinterpret_cast<const char*>(cur_data_),
-                               static_cast<uint32_t>(cur_size_), &parsed_size));
-    if (parser.num_rows() != parse_options_.header_rows) {
-      return Status::Invalid(
-          "Could not read header rows from FWF file, either "
-          "file is too short or header is larger than block size");
-    }
-    if (parser.num_cols() == 0) {
-      return Status::Invalid("No columns in FWF file");
-    }
-    num_cols_ = parser.num_cols();
+    num_cols_ = static_cast<int32_t>(column_names_.size());
     DCHECK_GT(num_cols_, 0);
 
+    // Construct column builders
     for (int32_t col_index = 0; col_index < num_cols_; ++col_index) {
-      auto visit = [&](const uint8_t* data, uint32_t size) -> Status {
-        DCHECK_EQ(column_names_.size(), static_cast<uint32_t>(col_index));
-        // Skip trailing whitespace
-        if (ARROW_PREDICT_TRUE(size > 0) && ARROW_PREDICT_FALSE(IsWhitespace(data[size - 1]))) {
-          const uint8_t* p = data + size - 1;
-          while (size > 0 && IsWhitespace(*p)) {
-            --size;
-            --p;
-          }
-        }
-        // Skip leading whitespace
-        if (ARROW_PREDICT_TRUE(size > 0) && ARROW_PREDICT_FALSE(IsWhitespace(data[0]))) {
-          while (size > 0 && IsWhitespace(*data)) {
-            --size;
-            ++data;
-          }
-        } 
-        column_names_.emplace_back(reinterpret_cast<const char*>(data), size);
-        return Status::OK();
-      };
-      RETURN_NOT_OK(parser.VisitColumn(col_index, visit));
       std::shared_ptr<ColumnBuilder> builder;
       // Does the named column have a fixed type?
       auto it = convert_options_.column_types.find(column_names_[col_index]);
@@ -266,53 +264,53 @@ class BaseTableReader : public fwfr::TableReader {
       }
       column_builders_.push_back(builder);
     }
-    
-    // Skip parsed header rows
-    cur_data_ += parsed_size;
-    cur_size_ -= parsed_size;
-    return Status::OK();
+    return arrow::Status::OK();
   }
 
   // Trigger conversion of parsed block data
-  Status ProcessData(const std::shared_ptr<BlockParser>& parser, int64_t block_index) {
+  arrow::Status ProcessData(const std::shared_ptr<BlockParser>& parser, int64_t block_index) {
     for (auto& builder : column_builders_) {
       builder->Insert(block_index, parser);
     }
-    return Status::OK();
+    return arrow::Status::OK();
   }
 
-  Status MakeTable(std::shared_ptr<Table>* out) {
+  arrow::Status MakeTable(std::shared_ptr<arrow::Table>* out) {
     DCHECK_GT(num_cols_, 0);
     DCHECK_EQ(column_names_.size(), static_cast<uint32_t>(num_cols_));
     DCHECK_EQ(column_builders_.size(), static_cast<uint32_t>(num_cols_));
 
-    std::vector<std::shared_ptr<Field>> fields;
-    std::vector<std::shared_ptr<Column>> columns;
+    std::vector<std::shared_ptr<arrow::Field>> fields;
+    std::vector<std::shared_ptr<arrow::Column>> columns;
 
     for (int32_t i = 0; i < num_cols_; ++i) {
-      std::shared_ptr<ChunkedArray> array;
+      std::shared_ptr<arrow::ChunkedArray> array;
       RETURN_NOT_OK(column_builders_[i]->Finish(&array));
-      columns.push_back(std::make_shared<Column>(column_names_[i], array));
+      columns.push_back(std::make_shared<arrow::Column>(column_names_[i], array));
       fields.push_back(columns.back()->field());
     }
-    *out = Table::Make(schema(fields), columns);
-    return Status::OK();
+    *out = arrow::Table::Make(schema(fields), columns);
+    return arrow::Status::OK();
   }
 
-  MemoryPool* pool_;
+  arrow::MemoryPool* pool_;
   ReadOptions read_options_;
   ParseOptions parse_options_;
   ConvertOptions convert_options_;
 
+  // Note: UConverter objects must be declared in one step; no forward declaration
+  UErrorCode uerr_ = U_ZERO_ERROR;
+  UConverter *ucnv_ = ucnv_open(read_options_.encoding.c_str(), &uerr_); 
+  
   int32_t num_cols_ = -1;
-  std::shared_ptr<ReadaheadSpooler> readahead_;
+  std::shared_ptr<arrow::io::internal::ReadaheadSpooler> readahead_;
   // Column names
   std::vector<std::string> column_names_;
-  std::shared_ptr<internal::TaskGroup> task_group_;
+  std::shared_ptr<arrow::internal::TaskGroup> task_group_;
   std::vector<std::shared_ptr<ColumnBuilder>> column_builders_;
 
   // Current block and data pointer
-  std::shared_ptr<Buffer> cur_block_;
+  std::shared_ptr<arrow::Buffer> cur_block_;
   const uint8_t* cur_data_ = nullptr;
   int64_t cur_size_ = 0;
   // Index of current block inside data stream
@@ -328,24 +326,24 @@ class BaseTableReader : public fwfr::TableReader {
 // Serial TableReader implementation
 class SerialTableReader : public BaseTableReader {
  public:
-  SerialTableReader(MemoryPool* pool, std::shared_ptr<io::InputStream> input,
+  SerialTableReader(arrow::MemoryPool* pool, std::shared_ptr<arrow::io::InputStream> input,
                     const ReadOptions& read_options, const ParseOptions& parse_options,
                     const ConvertOptions& convert_options)
       : BaseTableReader(pool, read_options, parse_options, convert_options) {
     // Since we're converting serially, no need to readahead more than one block
     int32_t block_queue_size = 1;
-    readahead_ = std::make_shared<ReadaheadSpooler>(
+    readahead_ = std::make_shared<arrow::io::internal::ReadaheadSpooler>(
         pool_, input, read_options_.block_size, block_queue_size, kDefaultLeftPadding,
         kDefaultRightPadding);
   }
 
-  Status Read(std::shared_ptr<Table>* out) {
-    task_group_ = internal::TaskGroup::MakeSerial();
+  arrow::Status Read(std::shared_ptr<arrow::Table>* out) {
+    task_group_ = arrow::internal::TaskGroup::MakeSerial();
 
     // First block
     RETURN_NOT_OK(ReadFirstBlock());
     if (eof_) {
-      return Status::Invalid("Empty FWF file");
+      return arrow::Status::Invalid("Empty FWF file");
     }
     RETURN_NOT_OK(ProcessHeader());
 
@@ -383,6 +381,11 @@ class SerialTableReader : public BaseTableReader {
 
     // Finish conversion, create schema and table
     RETURN_NOT_OK(task_group_->Finish());
+
+    // Clean up ICU
+    ucnv_close(ucnv_);
+    u_cleanup();
+    
     return MakeTable(out);
   }
 };
@@ -391,15 +394,15 @@ class SerialTableReader : public BaseTableReader {
 // Parallel TableReader implementation
 class ThreadedTableReader : public BaseTableReader {
  public:
-  ThreadedTableReader(MemoryPool* pool, std::shared_ptr<io::InputStream> input,
-                      ThreadPool* thread_pool, const ReadOptions& read_options,
+  ThreadedTableReader(arrow::MemoryPool* pool, std::shared_ptr<arrow::io::InputStream> input,
+                      arrow::internal::ThreadPool* thread_pool, const ReadOptions& read_options,
                       const ParseOptions& parse_options,
                       const ConvertOptions& convert_options)
       : BaseTableReader(pool, read_options, parse_options, convert_options),
         thread_pool_(thread_pool) {
     // Readahead one block per worker thread
     int32_t block_queue_size = thread_pool->GetCapacity();
-    readahead_ = std::make_shared<ReadaheadSpooler>(
+    readahead_ = std::make_shared<arrow::io::internal::ReadaheadSpooler>(
         pool_, input, read_options_.block_size, block_queue_size, kDefaultLeftPadding,
         kDefaultRightPadding);
   }
@@ -412,15 +415,15 @@ class ThreadedTableReader : public BaseTableReader {
     }
   }
 
-  Status Read(std::shared_ptr<Table>* out) {
-    task_group_ = internal::TaskGroup::MakeThreaded(thread_pool_);
+  arrow::Status Read(std::shared_ptr<arrow::Table>* out) {
+    task_group_ = arrow::internal::TaskGroup::MakeThreaded(thread_pool_);
     static constexpr int32_t max_num_rows = std::numeric_limits<int32_t>::max();
     Chunker chunker(parse_options_);
 
     // Get first block and process header serially
     RETURN_NOT_OK(ReadFirstBlock());
     if (eof_) {
-      return Status::Invalid("Empty FWF file");
+      return arrow::Status::Invalid("Empty FWF file");
     }
     RETURN_NOT_OK(ProcessHeader());
 
@@ -432,11 +435,11 @@ class ThreadedTableReader : public BaseTableReader {
       if (chunk_size > 0) {
         // Got a chunk of rows
         const uint8_t* chunk_data = cur_data_;
-        std::shared_ptr<Buffer> chunk_buffer = cur_block_;
+        std::shared_ptr<arrow::Buffer> chunk_buffer = cur_block_;
         int64_t chunk_index = cur_block_index_;
 
         // "mutable" allows to modify captured by-copy chunk_buffer
-        task_group_->Append([=]() mutable -> Status {
+        task_group_->Append([=]() mutable -> arrow::Status {
           auto parser = std::make_shared<BlockParser>(pool_, parse_options_, 
                                                       num_cols_, max_num_rows);
           uint32_t parsed_size = 0;
@@ -444,13 +447,13 @@ class ThreadedTableReader : public BaseTableReader {
                                       chunk_size, &parsed_size));
           if (parsed_size != chunk_size) {
             DCHECK_EQ(parsed_size, chunk_size);
-            return Status::Invalid("Chunker and parser disagree on block size: ",
+            return arrow::Status::Invalid("Chunker and parser disagree on block size: ",
                                    chunk_size, " vs ", parsed_size);
           }
           RETURN_NOT_OK(ProcessData(parser, chunk_index));
           // Keep chunk buffer alive within closure and release it at the end
           chunk_buffer.reset();
-          return Status::OK();
+          return arrow::Status::OK();
         });
         cur_data_ += chunk_size;
         cur_size_ -= chunk_size;
@@ -466,7 +469,7 @@ class ThreadedTableReader : public BaseTableReader {
 
     if (eof_ && cur_size_ > 0) {
       // Parse remaining data (serial)
-      task_group_ = internal::TaskGroup::MakeSerial();
+      task_group_ = arrow::internal::TaskGroup::MakeSerial();
       for (auto& builder : column_builders_) {
         builder->SetTaskGroup(task_group_);
       }
@@ -481,36 +484,39 @@ class ThreadedTableReader : public BaseTableReader {
       RETURN_NOT_OK(task_group_->Finish());
     }
 
+    // Clean up ICU
+    ucnv_close(ucnv_);
+    u_cleanup();
+
     // Create schema and table
     return MakeTable(out);
   }
 
  protected:
-  ThreadPool* thread_pool_;
+  arrow::internal::ThreadPool* thread_pool_;
 };
 
 /////////////////////////////////////////////////////////////
 // TableReader factory function
 
-Status TableReader::Make(MemoryPool* pool, std::shared_ptr<io::InputStream> input,
-                         const ReadOptions& read_options,
-                         const ParseOptions& parse_options,
-                         const ConvertOptions& convert_options,
-                         std::shared_ptr<TableReader>* out) {
+arrow::Status TableReader::Make(arrow::MemoryPool* pool, std::shared_ptr<arrow::io::InputStream> input,
+                                const ReadOptions& read_options,
+                                const ParseOptions& parse_options,
+                                const ConvertOptions& convert_options,
+                                std::shared_ptr<TableReader>* out) {
     std::shared_ptr<TableReader> result;
     if (read_options.use_threads) {
-        result = std::make_shared<ThreadedTableReader>(pool, input, GetCpuThreadPool(), 
+        result = std::make_shared<ThreadedTableReader>(pool, input, arrow::internal::GetCpuThreadPool(), 
                                                        read_options, parse_options, 
                                                        convert_options);
         *out = result;
-        return Status::OK();
+        return arrow::Status::OK();
     } else {
         result = std::make_shared<SerialTableReader>(pool, input, read_options, parse_options, 
                                                      convert_options);
         *out = result;
-        return Status::OK();
+        return arrow::Status::OK();
     }
 }
 
 }  // namespace fwfr
-}  // namespace arrow
