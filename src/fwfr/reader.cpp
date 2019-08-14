@@ -445,8 +445,7 @@ class ThreadedTableReader : public BaseTableReader {
           uint32_t parsed_size = 0;
           RETURN_NOT_OK(parser->Parse(reinterpret_cast<const char*>(chunk_data),
                                       chunk_size, &parsed_size));
-          if (parsed_size != chunk_size) {
-            DCHECK_EQ(parsed_size, chunk_size);
+          if (parsed_size != chunk_size && parse_options_.skip_columns.size() == 0) {
             return arrow::Status::Invalid("Chunker and parser disagree on block size: ",
                                    chunk_size, " vs ", parsed_size);
           }

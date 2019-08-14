@@ -49,6 +49,8 @@ struct ARROW_EXPORT ParseOptions {
   // Whether empty lines are ignored.  If false, an empty line represents
   // a single empty value (assuming a one-column FWF file).
   bool ignore_empty_lines = true;
+  // Optional column positions for columns to skip. Default read all.
+  std::vector<uint32_t> skip_columns {};
 
   static ParseOptions Defaults();
 };

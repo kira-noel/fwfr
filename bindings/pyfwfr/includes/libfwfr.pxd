@@ -33,6 +33,7 @@ cdef extern from "../include/fwfr/api.h" namespace "fwfr" nogil:
     cdef cppclass CFWFParseOptions" fwfr::ParseOptions":
         vector[uint32_t] field_widths
         c_bool ignore_empty_lines
+        vector[uint32_t] skip_columns
 
         @staticmethod
         CFWFParseOptions Defaults()

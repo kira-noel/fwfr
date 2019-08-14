@@ -47,7 +47,8 @@ cdef class ReadOptions:
     # Avoid mistakenly creating attributes
     __slots__ = ()
 
-    def __init__(self, encoding=None, use_threads=None, block_size=None, skip_rows=None, column_names=None):
+    def __init__(self, encoding=None, use_threads=None, block_size=None, 
+                 skip_rows=None, column_names=None):
         self.options = CFWFReadOptions.Defaults()
         if encoding is not None:
             self.encoding = encoding
@@ -138,11 +139,14 @@ cdef class ParseOptions:
     # Avoid mistakenly creating new attributes
     __slots__ = ()
 
-    def __init__(self, field_widths, ignore_empty_lines=None):
+    def __init__(self, field_widths, ignore_empty_lines=None, 
+                 skip_columns=None):
         self.options = CFWFParseOptions.Defaults()
         self.field_widths = field_widths
         if ignore_empty_lines is not None:
             self.ignore_empty_lines = ignore_empty_lines
+        if skip_columns is not None:
+            self.skip_columns = skip_columns
 
     @property
     def field_widths(self):
@@ -166,6 +170,16 @@ cdef class ParseOptions:
     def ignore_empty_lines(self, value):
         self.options.ignore_empty_lines = value
 
+    @property
+    def skip_columns(self):
+        """
+        Indices to skip on read-in.
+        """
+        return self.options.skip_columns
+
+    @skip_columns.setter
+    def skip_columns(self, value):
+        self.options.skip_columns = value
 
 cdef class ConvertOptions:
     """
@@ -383,8 +397,8 @@ def read_fwf(input_file, parse_options, read_options=None,
     Parameters
     ----------
     input_file : string, path or file-like object
-        The location of the FWF data. If a string or path, and if it ends with a recognized
-        compressed file extension (e.g. ".gz" or ".bz2"),
+        The location of the FWF data. If a string or path, and if it ends
+        with a recognized compressed file extension (e.g. ".gz" or ".bz2"),
         the data is automatically decompressed when reading.
     parse_options : fwfr.ParseOptions, required
         Options for the FWF parser
@@ -423,4 +437,3 @@ def read_fwf(input_file, parse_options, read_options=None,
         check_status(reader.get().Read(&table))
 
     return pyarrow_wrap_table(table)
-    

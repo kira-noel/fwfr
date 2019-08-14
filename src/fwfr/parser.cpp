@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <utility>
+#include <vector>
 
 #include <arrow/memory_pool.h>
 #include <arrow/status.h>
@@ -229,7 +230,7 @@ arrow::Status BlockParser::ParseLine(ValuesWriter* values_writer, ParsedWriter* 
 
   // Special case empty lines: do we start with a newline separator?
   c = *data;
-  if (ARROW_PREDICT_FALSE(IsControlChar(c)) && options_.ignore_empty_lines) {
+  if (IsControlChar(c) && options_.ignore_empty_lines) {
     if (c == '\r') {
       data++;
       if (data < data_end && *data == '\n') {
@@ -246,30 +247,39 @@ arrow::Status BlockParser::ParseLine(ValuesWriter* values_writer, ParsedWriter* 
 FieldStart:
   // At the start of a field
   values_writer->StartField();
+  for (int i=0; i < options_.skip_columns.size(); i++) {
+    if (cur_field == options_.skip_columns[i]) {
+        goto SkipField;
+    }
+  }
   goto InField;
+
+SkipField:
+  // Skip the contents of the field
+  for (int i=0; i < options_.field_widths[cur_field]; i++) {
+    if (data == data_end) {
+        goto AbortLine;
+    }
+    c = *data++;
+    ++cur_field_index;
+  }
+  if (cur_field >= options_.field_widths.size() - 1) {
+    goto LineEnd;
+  } 
+  ++cur_field;
+  cur_field_index = 0;
+  goto FieldStart;
 
 InField:
   // Inside a field
-  if (ARROW_PREDICT_FALSE(data == data_end)) {
+  if (data == data_end) {
     goto AbortLine;
   }
   c = *data++;
   ++cur_field_index;  
 
-  if (ARROW_PREDICT_FALSE(cur_field_index == options_.field_widths[cur_field])) {
+  if (cur_field_index == options_.field_widths[cur_field]) {
     goto FieldEnd;
-  }
-  if (ARROW_PREDICT_FALSE(IsControlChar(c)) && !options_.newlines_in_values) {
-    if (c == '\r') {
-      // In the middle of a newline separator?
-      if (ARROW_PREDICT_TRUE(data < data_end) && *data == '\n') {
-        data++;
-      }
-      goto LineEnd;
-    }
-    if (c == '\n') {
-      goto LineEnd;
-    }
   }
   parsed_writer->PushFieldChar(c);
   goto InField;
@@ -277,16 +287,16 @@ InField:
 FieldEnd:
   // At the end of a field
   parsed_writer->PushFieldChar(c);
+  FinishField();
+
+  ++num_cols;
 
   if (cur_field >= options_.field_widths.size() - 1) {
     goto LineEnd;
   }
-
-  FinishField();
-  ++num_cols;
   ++cur_field;
 
-  if (ARROW_PREDICT_FALSE(data == data_end)) {
+  if (data == data_end) {
     goto AbortLine;
   }
 
@@ -295,16 +305,18 @@ FieldEnd:
 
 LineEnd:
   // At the end of line
-  FinishField();
-  ++num_cols;
-  if (ARROW_PREDICT_FALSE(num_cols != num_cols_)) {
+  if (num_cols != num_cols_) {
     if (num_cols_ == -1) {
       num_cols_ = num_cols;
     } else {
       return MismatchingColumns(num_cols_, num_cols);
     }
   }
-  DCHECK_EQ(num_cols_, options_.field_widths.size());
+  if (options_.skip_columns.size() == 0) {
+    DCHECK_EQ(num_cols_, options_.field_widths.size());
+  } else {
+    DCHECK_LE(num_cols_, options_.field_widths.size());
+  }
   ++num_rows_;
   *out_data = data;
   return arrow::Status::OK();

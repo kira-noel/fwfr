@@ -67,22 +67,13 @@ FieldStart:
 
 InField:
   // Inside a field
-  if (ARROW_PREDICT_FALSE(data == data_end)) {
+  if (data == data_end) {
     goto AbortLine;
   }
   c = *data++;
   ++cur_field_index;
 
-  if (ARROW_PREDICT_FALSE(c == '\r')) {
-    if (ARROW_PREDICT_TRUE(data != data_end) && *data == '\n') {
-      data++;
-    }
-    goto LineEnd;
-  }
-  if (ARROW_PREDICT_FALSE(c == '\n')) {
-    goto LineEnd;
-  }
-  if (ARROW_PREDICT_FALSE(cur_field_index >= options_.field_widths[cur_field])) {
+  if (cur_field_index >= options_.field_widths[cur_field]) {
     goto FieldEnd;
   }
   goto InField;
@@ -92,7 +83,6 @@ FieldEnd:
   if (cur_field >= options_.field_widths.size() - 1) {
     goto LineEnd;
   }
-
   ++cur_field;
   cur_field_index = 0;
   goto FieldStart;
