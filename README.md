@@ -4,9 +4,6 @@ reader for reading fixed-width files (tabular data where all fields in a column 
 padded to the same number of bytes) to Arrow tables. Written in C++, with Python bindings. 
 Supports various [encodings](http://demo.icu-project.org/icu-bin/convexp).
 
-Although the project is standalone, it is intended for use with 
-[Artemis](https://gitlab.k8s.cloud.statcan.ca/stcdatascience/artemis).
-
 # Installation
 ### Installation from source
 Install and build everything from source into your active Conda environment. Any
@@ -15,7 +12,7 @@ installation.
 ```
 conda create -n env
 conda activate env
-git clone https://gitlab.k8s.cloud.statcan.ca/stcdatascience/fwfr.git
+git clone https://github.com/kira-noel/fwfr.git
 cd fwfr
 ./install.sh --source
 ```
@@ -32,7 +29,7 @@ Missing dependencies are gathered automatically. Unit tests run after installati
 ```
 conda create -y -n env
 conda activate env
-git clone https://gitlab.k8s.cloud.statcan.ca/stcdatascience/fwfr.git
+git clone https://github.com/kira-noel/fwfr.git
 cd fwfr
 cp PATH/TO/LOCAL-CHANNEl.TAR.GZ ./
 ./install.sh --conda
@@ -134,6 +131,9 @@ table = pf.read_fwf(filename, parse_options, read_options=read_options)
 
 #### get\_library\_dir
 Return absolute path to libfwfr.so, the C++ base library.
+
+#### get\_include\_dir
+Return absolute path to C++ headers.
 
 ## Unit tests
 Current included tests:
