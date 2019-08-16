@@ -25,15 +25,20 @@
 #ifndef FWFR_PARSER_H
 #define FWFR_PARSER_H
 
-#include <cstddef>
-#include <cstdint>
-#include <memory>
-#include <vector>
-
 #include <fwfr/options.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <memory>
+#include <utility>
+#include <vector>
+
 #include <arrow/buffer.h>
+#include <arrow/memory_pool.h>
 #include <arrow/status.h>
+#include <arrow/util/logging.h>
 #include <arrow/util/macros.h>
 #include <arrow/util/visibility.h>
 
@@ -127,18 +132,20 @@ class ARROW_EXPORT BlockParser {
  protected:
   ARROW_DISALLOW_COPY_AND_ASSIGN(BlockParser);
 
-  arrow::Status DoParse(const char* data, uint32_t size, bool is_final, uint32_t* out_size);
+  arrow::Status DoParse(const char* data, uint32_t size, 
+                        bool is_final, uint32_t* out_size);
   
   template <typename ValuesWriter, typename ParsedWriter>
   arrow::Status ParseChunk(ValuesWriter* values_writer, ParsedWriter* parsed_writer,
                            const char* data, const char* data_end, bool is_final,
-                           int32_t rows_in_chunk, const char** out_data, bool* finished_parsing);
+                           int32_t rows_in_chunk, const char** out_data,
+                           bool* finished_parsing);
 
   // Parse a single line from the data pointer
   template <typename ValuesWriter, typename ParsedWriter>
   arrow::Status ParseLine(ValuesWriter* values_writer, ParsedWriter* parsed_writer,
-                   const char* data, const char* data_end, bool is_final,
-                   const char** out_data);
+                          const char* data, const char* data_end, bool is_final,
+                          const char** out_data);
 
   arrow::MemoryPool* pool_;
   const ParseOptions options_;

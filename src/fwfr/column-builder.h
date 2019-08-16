@@ -25,11 +25,25 @@
 #ifndef FWFR_COLUMN_BUILDER_H
 #define FWFR_COLUMN_BUILDER_H
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
+#include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include <fwfr/converter.h>
+#include <fwfr/options.h>
 
 #include <arrow/array.h>
+#include <arrow/memory_pool.h>
 #include <arrow/status.h>
+#include <arrow/table.h>
+#include <arrow/type.h>
+#include <arrow/util/logging.h>
+#include <arrow/util/task-group.h>
 #include <arrow/util/visibility.h>
 
 namespace arrow {
@@ -68,10 +82,10 @@ class ColumnBuilder {
   std::shared_ptr<arrow::internal::TaskGroup> task_group() { return task_group_; }
 
   /// Construct a strictly-typed ColumnBuilder.
-  static arrow::Status Make(const std::shared_ptr<arrow::DataType>& type, int32_t col_index,
-                           const ConvertOptions& options,
-                           const std::shared_ptr<arrow::internal::TaskGroup>& task_group,
-                           std::shared_ptr<ColumnBuilder>* out);
+  static arrow::Status Make(const std::shared_ptr<arrow::DataType>& type, 
+                            int32_t col_index, const ConvertOptions& options,
+                            const std::shared_ptr<arrow::internal::TaskGroup>& task_group,
+                            std::shared_ptr<ColumnBuilder>* out);
 
   /// Construct a type-inferring ColumnBuilder.
   static arrow::Status Make(int32_t col_index, const ConvertOptions& options,

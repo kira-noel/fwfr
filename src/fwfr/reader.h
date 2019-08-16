@@ -25,17 +25,34 @@
 #ifndef FWFR_READER_H
 #define FWFR_READER_H
 
-#include <memory>
-#include <vector>
-
-#include <fwfr/options.h>
-
-#include <arrow/status.h>
-#include <arrow/util/visibility.h>
-
+#include <cassert>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <cassert>
+#include <limits>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+#include <fwfr/chunker.h>
+#include <fwfr/column-builder.h>
+#include <fwfr/options.h>
+#include <fwfr/parser.h>
+
+#include <arrow/buffer.h>
+#include <arrow/io/readahead.h>
+#include <arrow/status.h>
+#include <arrow/table.h>
+#include <arrow/type.h>
+#include <arrow/util/logging.h>
+#include <arrow/util/macros.h>
+#include <arrow/util/task-group.h>
+#include <arrow/util/thread-pool.h>
+#include <arrow/util/visibility.h>
+
 #include <unicode/ucnv.h>
 #include <unicode/uclean.h>
 
@@ -58,8 +75,11 @@ class ARROW_EXPORT TableReader {
     
   static int add(int a, int b);
 
-  static arrow::Status Make(arrow::MemoryPool* pool, std::shared_ptr<arrow::io::InputStream> input,
-                            const ReadOptions&, const ParseOptions&, const ConvertOptions&,
+  static arrow::Status Make(arrow::MemoryPool* pool, 
+                            std::shared_ptr<arrow::io::InputStream> input,
+                            const ReadOptions&,
+                            const ParseOptions&,
+                            const ConvertOptions&,
                             std::shared_ptr<TableReader>* out);
 };
 

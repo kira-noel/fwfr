@@ -1,9 +1,11 @@
-# fwfr -- Fixed-Width File Reader
+# fwf-reader
 An extension to [Apache Arrow](https://github.com/apache/arrow) based on their CSV 
 reader for reading fixed-width files (tabular data where all fields in a column are 
 padded to the same number of bytes) to Arrow tables. Written in C++, with Python bindings. 
-Supports various [encodings](http://demo.icu-project.org/icu-bin/convexp) and COBOL-formatted
-numeric values.
+Supports various [encodings](http://demo.icu-project.org/icu-bin/convexp).
+
+Although the project is standalone, it is intended for use with 
+[Artemis](https://gitlab.k8s.cloud.statcan.ca/stcdatascience/artemis).
 
 # Installation
 ### Installation from source
@@ -13,12 +15,28 @@ installation.
 ```
 conda create -n env
 conda activate env
-git clone https://github.com/kira.noel/fwfr.git
+git clone https://gitlab.k8s.cloud.statcan.ca/stcdatascience/fwfr.git
 cd fwfr
 ./install.sh --source
 ```
 If you want to use the C++ library without Python, the installation script also installs 
 libfwfr.so and headers in $CONDA\_PREFIX/{lib,include/fwfr}.
+
+Note: if modifying setup.py (the file used to build the Python bindings), note that you cannot use distutils. Wheel uses these. Instead, use setuptools.
+
+### Installation from pre-compiled binaries (not recommended)
+Download the module using the most recent binaries. Download the local-channel.tar.gz
+archive from the most recent pipeline (job: build-recipe) using the GitLab web interface.
+This will install the Python and C++ components in your activate Conda environment.
+Missing dependencies are gathered automatically. Unit tests run after installation.
+```
+conda create -y -n env
+conda activate env
+git clone https://gitlab.k8s.cloud.statcan.ca/stcdatascience/fwfr.git
+cd fwfr
+cp PATH/TO/LOCAL-CHANNEl.TAR.GZ ./
+./install.sh --conda
+```
 
 # Reference
 ## pyfwfr
@@ -32,9 +50,12 @@ The number of bytes in each field in a column of FWF data.
 
 **ignore_empty_lines**: bool, optional (default True)<br>
 Whether empty lines are ignored in FWF input.
+
+**skip_columns**: int list, optional (default empty)<br>
+Indexes of columns to skip on read-in.
 ```python
 import pyfwfr as pf
-parse_options = pf.ParseOptions([6, 6, 6, 4], ignore_empty_lines=True)
+parse_options = pf.ParseOptions([6, 6, 6, 4], ignore_empty_lines=True, [0, 1, 6])
 parse_options.field_widths  # displays [6, 6, 6, 4]
 parse_options.field_widths = [4, 4, 4, 4]
 parse_options.field_widths  # displays [4, 4, 4, 4]
@@ -126,6 +147,7 @@ Current included tests:
 * test\_parse\_options: set and get all ParseOptions.
 * test\_read\_options: set and get all ReadOptions.
 * test\_serial\_read: read table serially.
+* test\_skip\_columns: have the parser skip the specified columns.
 * test\_small: threaded-read a small UTF8 dataset.
 * test\_small\_encoded: threaded-read a small big5-encoded dataset.
 

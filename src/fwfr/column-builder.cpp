@@ -22,26 +22,7 @@
 //
 // Distributed under terms of the license.
 
-#include <cstddef>
-#include <cstdint>
-#include <memory>
-#include <mutex>
-#include <sstream>
-#include <string>
-#include <utility>
-#include <vector>
-
 #include <fwfr/column-builder.h>
-#include <fwfr/converter.h>
-#include <fwfr/options.h>
-
-#include <arrow/array.h>
-#include <arrow/memory_pool.h>
-#include <arrow/status.h>
-#include <arrow/table.h>
-#include <arrow/type.h>
-#include <arrow/util/logging.h>
-#include <arrow/util/task-group.h>
 
 namespace fwfr {
 
@@ -49,7 +30,8 @@ class BlockParser;
 
 using arrow::internal::TaskGroup;
 
-void ColumnBuilder::SetTaskGroup(const std::shared_ptr<arrow::internal::TaskGroup>& task_group) {
+void ColumnBuilder::SetTaskGroup(
+        const std::shared_ptr<arrow::internal::TaskGroup>& task_group) {
   task_group_ = task_group;
 }
 
@@ -360,11 +342,13 @@ arrow::Status InferringColumnBuilder::Finish(std::shared_ptr<arrow::ChunkedArray
 ////////////////////////////////////////////////////////////////////////
 // Factory functions
 
-arrow::Status ColumnBuilder::Make(const std::shared_ptr<arrow::DataType>& type, int32_t col_index,
+arrow::Status ColumnBuilder::Make(const std::shared_ptr<arrow::DataType>& type, 
+                                  int32_t col_index,
                                   const ConvertOptions& options,
                                   const std::shared_ptr<TaskGroup>& task_group,
                                   std::shared_ptr<ColumnBuilder>* out) {
-    auto ptr = new TypedColumnBuilder(type, col_index, options, arrow::default_memory_pool(), task_group);
+    auto ptr = new TypedColumnBuilder(type, col_index, options, 
+                                      arrow::default_memory_pool(), task_group);
     auto res = std::shared_ptr<ColumnBuilder>(ptr);
     RETURN_NOT_OK(ptr->Init());
     *out = res;
@@ -374,7 +358,8 @@ arrow::Status ColumnBuilder::Make(const std::shared_ptr<arrow::DataType>& type, 
 arrow::Status ColumnBuilder::Make(int32_t col_index, const ConvertOptions& options,
                                   const std::shared_ptr<TaskGroup>& task_group,
                                   std::shared_ptr<ColumnBuilder>* out) {
-    auto ptr = new InferringColumnBuilder(col_index, options, arrow::default_memory_pool(), task_group);
+    auto ptr = new InferringColumnBuilder(col_index, options, 
+                                          arrow::default_memory_pool(), task_group);
     auto res = std::shared_ptr<ColumnBuilder>(ptr);
     RETURN_NOT_OK(ptr->Init());
     *out = res;

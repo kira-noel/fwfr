@@ -48,7 +48,7 @@ def main():
         packages=find_packages(),
         python_requires='>=3.7,<3.8',
         package_data={
-            '': ['*.so', '*.pxd', '*.h', '*.pyx'],
+            '': ['includes/*.pxd', 'include/fwfr/*.h', '*.pyx'],
         },
         include_package_data=True,
     )

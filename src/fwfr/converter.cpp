@@ -23,21 +23,6 @@
 // Distributed under terms of the license.
 
 #include <fwfr/converter.h>
-#include <fwfr/parser.h>
-
-#include <cstring>
-#include <sstream>
-#include <string>
-#include <type_traits>
-#include <vector>
-
-#include <arrow/builder.h>
-#include <arrow/memory_pool.h>
-#include <arrow/status.h>
-#include <arrow/type.h>
-#include <arrow/type_traits.h>
-#include <arrow/util/parsing.h>  // IWYU pragma: keep
-#include <arrow/util/trie.h>
 
 namespace fwfr {
 
@@ -47,11 +32,12 @@ using arrow::internal::TrieBuilder;
 
 namespace {
 
-arrow::Status GenericConversionError(const std::shared_ptr<arrow::DataType>& type, const uint8_t* data,
-                              uint32_t size) {
+arrow::Status GenericConversionError(const std::shared_ptr<arrow::DataType>& type,
+                                     const uint8_t* data, uint32_t size) {
   return arrow::Status::Invalid("FWF conversion error to ", type->ToString(),
                                 ": invalid value '",
-                                std::string(reinterpret_cast<const char*>(data), size), "'");
+                                std::string(
+                                    reinterpret_cast<const char*>(data), size), "'");
 }
 
 inline bool IsWhitespace(uint8_t c) {
@@ -61,7 +47,8 @@ inline bool IsWhitespace(uint8_t c) {
   return c == ' ' || c == '\t';
 }
 
-arrow::Status InitializeTrie(const std::vector<std::string>& inputs, arrow::internal::Trie* trie) {
+arrow::Status InitializeTrie(const std::vector<std::string>& inputs,
+                             arrow::internal::Trie* trie) {
   arrow::internal::TrieBuilder builder;
   for (const auto& s : inputs) {
     RETURN_NOT_OK(builder.Append(s, true /* allow_duplicates */));
@@ -86,8 +73,8 @@ arrow::Status ConcreteConverter::Initialize() {
 }
 
 bool ConcreteConverter::IsNull(const uint8_t* data, uint32_t size) {
-  return null_trie_.Find(arrow::util::string_view(reinterpret_cast<const char*>(data), size)) >=
-         0;
+  return null_trie_.Find(arrow::util::string_view(
+              reinterpret_cast<const char*>(data), size)) >= 0;
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -98,7 +85,7 @@ class NullConverter : public ConcreteConverter {
   using ConcreteConverter::ConcreteConverter;
 
   arrow::Status Convert(const BlockParser& parser, int32_t col_index,
-                 std::shared_ptr<arrow::Array>* out) override;
+                        std::shared_ptr<arrow::Array>* out) override;
 };
 
 arrow::Status NullConverter::Convert(const BlockParser& parser, int32_t col_index,
@@ -212,15 +199,16 @@ class FixedSizeBinaryConverter : public ConcreteConverter {
                         std::shared_ptr<arrow::Array>* out) override;
 };
 
-arrow::Status FixedSizeBinaryConverter::Convert(const BlockParser& parser, int32_t col_index,
+arrow::Status FixedSizeBinaryConverter::Convert(const BlockParser& parser,
+                                                int32_t col_index,
                                                 std::shared_ptr<arrow::Array>* out) {
   arrow::FixedSizeBinaryBuilder builder(type_, pool_);
   const uint32_t byte_width = static_cast<uint32_t>(builder.byte_width());
 
   auto visit = [&](const uint8_t* data, uint32_t size) -> arrow::Status {
     if (ARROW_PREDICT_FALSE(size != byte_width)) {
-      return arrow::Status::Invalid("FWF conversion error to ", type_->ToString(), ": got a ",
-                                    size, "-byte long string");
+      return arrow::Status::Invalid("FWF conversion error to ", type_->ToString(), 
+                                    ": got a ", size, "-byte long string");
     }
     return builder.Append(data);
   };
@@ -277,13 +265,13 @@ arrow::Status BooleanConverter::Convert(const BlockParser& parser, int32_t col_i
       builder.UnsafeAppendNull();
       return arrow::Status::OK();
     }
-    if (false_trie_.Find(arrow::util::string_view(reinterpret_cast<const char*>(data), size)) >=
-        0) {
+    if (false_trie_.Find(arrow::util::string_view(
+                    reinterpret_cast<const char*>(data), size)) >= 0) {
       builder.UnsafeAppend(false);
       return arrow::Status::OK();
     }
-    if (true_trie_.Find(arrow::util::string_view(reinterpret_cast<const char*>(data), size)) >=
-        0) {
+    if (true_trie_.Find(arrow::util::string_view(
+                    reinterpret_cast<const char*>(data), size)) >= 0) {
       builder.UnsafeAppend(true);
       return arrow::Status::OK();
     }
@@ -375,7 +363,8 @@ arrow::Status NumericConverter<T>::Convert(const BlockParser& parser, int32_t co
       if (is_modified) {
         if (ARROW_PREDICT_FALSE(
                     !converter(reinterpret_cast<const char*>(new_data), size, &value))) {
-          return GenericConversionError(type_, reinterpret_cast<const uint8_t*>(new_data), size);
+          return GenericConversionError(type_, 
+                                        reinterpret_cast<const uint8_t*>(new_data), size);
         }
         builder.UnsafeAppend(value);
         return arrow::Status::OK();
@@ -451,8 +440,8 @@ class TimestampConverter : public ConcreteConverter {
 /////////////////////////////////////////////////////////////////////////
 // Base Converter class implementation
 
-Converter::Converter(const std::shared_ptr<arrow::DataType>& type, const ConvertOptions& options,
-                     arrow::MemoryPool* pool)
+Converter::Converter(const std::shared_ptr<arrow::DataType>& type,
+                     const ConvertOptions& options, arrow::MemoryPool* pool)
     : options_(options), pool_(pool), type_(type) {}
 
 arrow::Status Converter::Make(const std::shared_ptr<arrow::DataType>& type,
@@ -498,7 +487,8 @@ arrow::Status Converter::Make(const std::shared_ptr<arrow::DataType>& type,
 }
 
 arrow::Status Converter::Make(const std::shared_ptr<arrow::DataType>& type,
-                       const ConvertOptions& options, std::shared_ptr<Converter>* out) {
+                              const ConvertOptions& options, 
+                              std::shared_ptr<Converter>* out) {
   return Make(type, options, arrow::default_memory_pool(), out);
 }
 

@@ -50,10 +50,7 @@ add_library (fwfr SHARED ${FWFR_SOURCES})
 target_link_libraries (fwfr ${FWFR_LIBS})
 
 # Install
-#set (LIB_DEST ${VENV}/lib)
-#set (INCLUDE_DEST ${VENV}/include/fwfr)
 set (PY_INCLUDE_DEST ${PROJECT_SOURCE_DIR}/bindings/pyfwfr/include/fwfr)
-
 set (LIB_DEST ${CMAKE_INSTALL_PREFIX}/lib)
 set (INCLUDE_DEST ${CMAKE_INSTALL_PREFIX}/include/fwfr)
 

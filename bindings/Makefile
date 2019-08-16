@@ -19,6 +19,7 @@ clean:
 cleaner: clean
 	@rm -rf dist *egg-info*
 	@rm -f *~
+	@rm -f pyfwfr/_fwfr.*.so
 
 cleanest: cleaner
 	@rm -rf pyfwfr/include/*

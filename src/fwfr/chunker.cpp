@@ -24,11 +24,6 @@
 
 #include <fwfr/chunker.h>
 
-#include <cstdint>
-
-#include <arrow/status.h>
-#include <arrow/util/logging.h>
-
 namespace fwfr {
 
 namespace {
@@ -95,22 +90,6 @@ AbortLine:
   return nullptr;
 }
 
-arrow::Status Chunker::ProcessSpecialized(const char* start, uint32_t size, uint32_t* out_size) {
-  const char* data = start;
-  const char* data_end = start + size;
-
-  while (data < data_end) {
-    const char* line_end = ReadLine(data, data_end);
-    if (line_end == nullptr) {
-      // Cannot read any further
-      break;
-    }
-    data = line_end;
-  }
-  *out_size = static_cast<uint32_t>(data - start);
-  return arrow::Status::OK();
-}
-
 arrow::Status Chunker::Process(const char* start, uint32_t size, uint32_t* out_size) {
   if (!options_.newlines_in_values) {
     // If newlines are not accepted in FWF values, we can simply search for
@@ -126,7 +105,19 @@ arrow::Status Chunker::Process(const char* start, uint32_t size, uint32_t* out_s
     }
     return arrow::Status::OK();
   }
-  return ProcessSpecialized(start, size, out_size);
+  const char* data = start;
+  const char* data_end = start + size;
+
+  while (data < data_end) {
+    const char* line_end = ReadLine(data, data_end);
+    if (line_end == nullptr) {
+        // Cannot read any further
+        break;
+    }
+    data = line_end;
+  }
+  *out_size = static_cast<uint32_t>(data - start);
+  return arrow::Status::OK();
 }
 
 }  // namespace fwfr

@@ -31,6 +31,7 @@
 #include <fwfr/options.h>
 
 #include <arrow/status.h>
+#include <arrow/util/logging.h>
 #include <arrow/util/macros.h>
 #include <arrow/util/visibility.h>
 
@@ -58,9 +59,6 @@ class ARROW_EXPORT Chunker {
 
  protected:
   ARROW_DISALLOW_COPY_AND_ASSIGN(Chunker);
-
-  // Like Process(), but specialized for some parsing options
-  arrow::Status ProcessSpecialized(const char* data, uint32_t size, uint32_t* out_size);
 
   // Detect a single line from the data pointer. Return the line end,
   // or nullptr if the remaining line is truncated.

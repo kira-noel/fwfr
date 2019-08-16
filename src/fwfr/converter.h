@@ -25,12 +25,25 @@
 #ifndef FWFR_CONVERTER_H
 #define FWFR_CONVERTER_H
 
+#include <fwfr/options.h>
+#include <fwfr/parser.h>
+
+#include <cstring>
 #include <cstdint>
 #include <memory>
+#include <sstream>
+#include <string>
+#include <type_traits>
+#include <vector>
 
-#include <fwfr/options.h>
-
+#include <arrow/builder.h>
+#include <arrow/memory_pool.h>
+#include <arrow/status.h>
+#include <arrow/type.h>
+#include <arrow/type_traits.h>
 #include <arrow/util/macros.h>
+#include <arrow/util/parsing.h>  // IWYU pragma: keep
+#include <arrow/util/trie.h>
 #include <arrow/util/visibility.h>
 
 namespace arrow {
@@ -51,14 +64,16 @@ class ARROW_EXPORT Converter {
   virtual ~Converter() = default;
 
   virtual arrow::Status Convert(const BlockParser& parser, int32_t col_index,
-                         std::shared_ptr<arrow::Array>* out) = 0;
+                                std::shared_ptr<arrow::Array>* out) = 0;
 
   std::shared_ptr<arrow::DataType> type() const { return type_; }
 
-  static arrow::Status Make(const std::shared_ptr<arrow::DataType>& type, const ConvertOptions& options,
-                     std::shared_ptr<Converter>* out);
-  static arrow::Status Make(const std::shared_ptr<arrow::DataType>& type, const ConvertOptions& options,
-                     arrow::MemoryPool* pool, std::shared_ptr<Converter>* out);
+  static arrow::Status Make(const std::shared_ptr<arrow::DataType>& type, 
+                            const ConvertOptions& options,
+                            std::shared_ptr<Converter>* out);
+  static arrow::Status Make(const std::shared_ptr<arrow::DataType>& type,
+                            const ConvertOptions& options,
+                            arrow::MemoryPool* pool, std::shared_ptr<Converter>* out);
 
  protected:
   ARROW_DISALLOW_COPY_AND_ASSIGN(Converter);

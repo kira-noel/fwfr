@@ -15,3 +15,10 @@ def get_library_dir():
     Return absolute path to libfwfr.so
     """
     return path.dirname(__file__) + '/../../..'
+
+
+def get_include():
+    """
+    Return absolute path to header home dir.
+    """
+    return path.dirname(__file__) + '/include'

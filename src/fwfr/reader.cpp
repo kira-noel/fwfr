@@ -24,40 +24,6 @@
 
 #include <fwfr/reader.h>
 
-#include <cstdint>
-#include <cstring>
-#include <limits>
-#include <memory>
-#include <sstream>
-#include <string>
-#include <unordered_map>
-#include <utility>
-#include <vector>
-
-#include <fwfr/chunker.h>
-#include <fwfr/column-builder.h>
-#include <fwfr/options.h>
-#include <fwfr/parser.h>
-#include <fwfr/SkipUTF8BOM.h>  // TODO temporary
-
-#include <arrow/buffer.h>
-#include <arrow/io/readahead.h>
-#include <arrow/status.h>
-#include <arrow/table.h>
-#include <arrow/type.h>
-#include <arrow/util/logging.h>
-#include <arrow/util/macros.h>
-#include <arrow/util/task-group.h>
-#include <arrow/util/thread-pool.h>
-
-#include <iostream>
-
-#include <cstdio>
-#include <cstring>
-#include <cassert>
-#include <unicode/ucnv.h>
-#include <unicode/uclean.h>
-
 namespace arrow {
     class MemoryPool;
 
@@ -83,6 +49,32 @@ inline bool IsWhitespace(uint8_t c) {
   return c == ' ' || c == '\t';
 }
 
+arrow::Status SkipUTF8BOM(const uint8_t* data, int64_t size, const uint8_t** out) {
+    int64_t i;
+    const uint8_t kBOM[] = { 0xEF, 0xBB, 0xBF };
+    for (i = 0; i < static_cast<uint64_t>(sizeof(kBOM)); ++i) {
+        if (size == 0) {
+            if (i == 0) {
+                // Empty string
+                *out = data;
+                return arrow::Status::OK();
+            } else {
+                return arrow::Status::Invalid(
+                        "UTF8 string too short (truncated byte order mark?)");
+            }
+        }
+        if (data[i] != kBOM[i]) {
+            // BOM not found
+            *out = data;
+            return arrow::Status::OK();
+        }
+        --size;
+    }
+    // BOM found
+    *out = data + i;
+    return arrow::Status::OK();
+}
+
 /////////////////////////////////////////////////////////////////////////
 // Base class for common functionality
 class BaseTableReader : public fwfr::TableReader {
@@ -100,8 +92,7 @@ class BaseTableReader : public fwfr::TableReader {
     RETURN_NOT_OK(ReadNextBlock());
     const uint8_t* data;
     
-    // TODO arrow::util::SkipUTF8BOM not in latest release; manual for now
-    RETURN_NOT_OK(extras::SkipUTF8BOM(cur_data_, cur_size_, &data));
+    RETURN_NOT_OK(SkipUTF8BOM(cur_data_, cur_size_, &data));
     cur_size_ -= data - cur_data_;
     cur_data_ = data;
     return arrow::Status::OK();
@@ -138,18 +129,20 @@ class BaseTableReader : public fwfr::TableReader {
     //   * EBCDIC encodings need ",lfnl" appended to codeset name ("cp1047,lfnl")
     //     to properly handle newlines 
     if (read_options_.encoding != "") {
-        int64_t encoded_size = new_size;
-        new_size = ucnv_toAlgorithmic(UCNV_UTF8, ucnv_, reinterpret_cast<char*>(new_data), 
-                                      new_size,  
-                                      reinterpret_cast<const char*>(new_data), 
-                                      new_size, &uerr_);
-        if (U_FAILURE(uerr_)) {
-            return arrow::Status::Invalid(u_errorName(uerr_));
-        }
-        if (encoded_size < new_size) {
-            return arrow::Status::Invalid("Decoded size larger than encoded size.",
-                    " Possible memory errors. ", encoded_size, " vs ", new_size);
-        }
+      int64_t encoded_size = new_size;
+      new_size = ucnv_toAlgorithmic(UCNV_UTF8, ucnv_,
+                                    reinterpret_cast<char*>(new_data), 
+                                    new_size,  
+                                    reinterpret_cast<const char*>(new_data), 
+                                    new_size, &uerr_);
+      if (U_FAILURE(uerr_)) {
+        return arrow::Status::Invalid(u_errorName(uerr_));
+      }
+      if (encoded_size < new_size) {
+        return arrow::Status::Invalid("Decoded size larger than encoded size.",
+                                      " Possible memory errors. ", encoded_size,
+                                      " vs ", new_size);
+      }
     }
 
     if (trailing_cr_ && new_data[0] == '\n') {
@@ -221,7 +214,8 @@ class BaseTableReader : public fwfr::TableReader {
         // Read column names from last header row
         auto visit = [&](const uint8_t* data, uint32_t size) -> arrow::Status {
             // Skip trailing whitespace
-            if (ARROW_PREDICT_TRUE(size > 0) && ARROW_PREDICT_FALSE(IsWhitespace(data[size - 1]))) {
+            if (ARROW_PREDICT_TRUE(size > 0) &&
+                    ARROW_PREDICT_FALSE(IsWhitespace(data[size - 1]))) {
                 const uint8_t* p = data + size - 1;
                 while (size > 0 && IsWhitespace(*p)) {
                     --size;
@@ -229,7 +223,8 @@ class BaseTableReader : public fwfr::TableReader {
                 }
             }
             // Skip leading whitespace
-            if (ARROW_PREDICT_TRUE(size > 0) && ARROW_PREDICT_FALSE(IsWhitespace(data[0]))) {
+            if (ARROW_PREDICT_TRUE(size > 0) &&
+                    ARROW_PREDICT_FALSE(IsWhitespace(data[0]))) {
                 while (size > 0 && IsWhitespace(*data)) {
                     --size;
                     ++data;
@@ -268,7 +263,8 @@ class BaseTableReader : public fwfr::TableReader {
   }
 
   // Trigger conversion of parsed block data
-  arrow::Status ProcessData(const std::shared_ptr<BlockParser>& parser, int64_t block_index) {
+  arrow::Status ProcessData(const std::shared_ptr<BlockParser>& parser,
+                            int64_t block_index) {
     for (auto& builder : column_builders_) {
       builder->Insert(block_index, parser);
     }
@@ -326,8 +322,10 @@ class BaseTableReader : public fwfr::TableReader {
 // Serial TableReader implementation
 class SerialTableReader : public BaseTableReader {
  public:
-  SerialTableReader(arrow::MemoryPool* pool, std::shared_ptr<arrow::io::InputStream> input,
-                    const ReadOptions& read_options, const ParseOptions& parse_options,
+  SerialTableReader(arrow::MemoryPool* pool,
+                    std::shared_ptr<arrow::io::InputStream> input,
+                    const ReadOptions& read_options,
+                    const ParseOptions& parse_options,
                     const ConvertOptions& convert_options)
       : BaseTableReader(pool, read_options, parse_options, convert_options) {
     // Since we're converting serially, no need to readahead more than one block
@@ -394,8 +392,10 @@ class SerialTableReader : public BaseTableReader {
 // Parallel TableReader implementation
 class ThreadedTableReader : public BaseTableReader {
  public:
-  ThreadedTableReader(arrow::MemoryPool* pool, std::shared_ptr<arrow::io::InputStream> input,
-                      arrow::internal::ThreadPool* thread_pool, const ReadOptions& read_options,
+  ThreadedTableReader(arrow::MemoryPool* pool,
+                      std::shared_ptr<arrow::io::InputStream> input,
+                      arrow::internal::ThreadPool* thread_pool,
+                      const ReadOptions& read_options,
                       const ParseOptions& parse_options,
                       const ConvertOptions& convert_options)
       : BaseTableReader(pool, read_options, parse_options, convert_options),
@@ -498,20 +498,26 @@ class ThreadedTableReader : public BaseTableReader {
 /////////////////////////////////////////////////////////////
 // TableReader factory function
 
-arrow::Status TableReader::Make(arrow::MemoryPool* pool, std::shared_ptr<arrow::io::InputStream> input,
+arrow::Status TableReader::Make(arrow::MemoryPool* pool,
+                                std::shared_ptr<arrow::io::InputStream> input,
                                 const ReadOptions& read_options,
                                 const ParseOptions& parse_options,
                                 const ConvertOptions& convert_options,
                                 std::shared_ptr<TableReader>* out) {
     std::shared_ptr<TableReader> result;
     if (read_options.use_threads) {
-        result = std::make_shared<ThreadedTableReader>(pool, input, arrow::internal::GetCpuThreadPool(), 
-                                                       read_options, parse_options, 
-                                                       convert_options);
+        result =
+            std::make_shared<ThreadedTableReader>(pool, input, 
+                                                  arrow::internal::GetCpuThreadPool(),
+                                                  read_options,
+                                                  parse_options, 
+                                                  convert_options);
         *out = result;
         return arrow::Status::OK();
     } else {
-        result = std::make_shared<SerialTableReader>(pool, input, read_options, parse_options, 
+        result = std::make_shared<SerialTableReader>(pool, input,
+                                                     read_options,
+                                                     parse_options, 
                                                      convert_options);
         *out = result;
         return arrow::Status::OK();

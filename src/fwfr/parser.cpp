@@ -24,15 +24,6 @@
 
 #include <fwfr/parser.h>
 
-#include <algorithm>
-#include <cstdio>
-#include <utility>
-#include <vector>
-
-#include <arrow/memory_pool.h>
-#include <arrow/status.h>
-#include <arrow/util/logging.h>
-
 namespace fwfr {
 
 static arrow::Status ParseError(const char* message) {
@@ -210,8 +201,11 @@ class BlockParser::PresizedValuesWriter {
 };
 
 template <typename ValuesWriter, typename ParsedWriter>
-arrow::Status BlockParser::ParseLine(ValuesWriter* values_writer, ParsedWriter* parsed_writer,
-                                     const char* data, const char* data_end, bool is_final,
+arrow::Status BlockParser::ParseLine(ValuesWriter* values_writer,
+                                     ParsedWriter* parsed_writer,
+                                     const char* data,
+                                     const char* data_end,
+                                     bool is_final,
                                      const char** out_data) {
   int32_t num_cols = 0;
   int32_t cur_field_index = 0;
@@ -346,10 +340,11 @@ EmptyLine:
 }
 
 template <typename ValuesWriter, typename ParsedWriter>
-arrow::Status BlockParser::ParseChunk(ValuesWriter* values_writer, ParsedWriter* parsed_writer,
-                               const char* data, const char* data_end, bool is_final,
-                               int32_t rows_in_chunk, const char** out_data,
-                               bool* finished_parsing) {
+arrow::Status BlockParser::ParseChunk(ValuesWriter* values_writer,
+                                      ParsedWriter* parsed_writer,
+                                      const char* data, const char* data_end, 
+                                      bool is_final, int32_t rows_in_chunk,
+                                      const char** out_data, bool* finished_parsing) {
   while (data < data_end && rows_in_chunk > 0) {
     const char* line_end = data;
     RETURN_NOT_OK(ParseLine(values_writer, parsed_writer, data,
@@ -453,11 +448,13 @@ arrow::Status BlockParser::Parse(const char* data, uint32_t size, uint32_t* out_
   return DoParse(data, size, false /* is_final */, out_size);
 }
 
-arrow::Status BlockParser::ParseFinal(const char* data, uint32_t size, uint32_t* out_size) {
+arrow::Status BlockParser::ParseFinal(const char* data, uint32_t size, 
+                                      uint32_t* out_size) {
   return DoParse(data, size, true /* is_final */, out_size);
 }
 
-BlockParser::BlockParser(arrow::MemoryPool* pool, ParseOptions options, int32_t num_cols, int32_t max_num_rows)
+BlockParser::BlockParser(arrow::MemoryPool* pool, ParseOptions options, int32_t num_cols,
+                         int32_t max_num_rows)
     : pool_(pool), options_(options), num_cols_(num_cols), max_num_rows_(max_num_rows) {}
 
 BlockParser::BlockParser(ParseOptions options, int32_t num_cols, int32_t max_num_rows)

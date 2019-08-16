@@ -62,12 +62,12 @@ struct ARROW_EXPORT ConvertOptions {
   std::unordered_map<std::string, std::shared_ptr<arrow::DataType>> column_types;
   // Whether to treat as COBOL data
   bool is_cobol = false;
-  // Optional, positive numbers for COBOL datasets. Use last character to change field meaning.
+  // Optional, positive numbers for COBOL-formatted numeric values.
   std::unordered_map<char, char> pos_values = {
           {'{', '0'}, {'A', '1'}, {'B', '2'}, {'C', '3'}, {'D', '4'},
           {'E', '5'}, {'F', '6'}, {'G', '7'}, {'H', '8'}, {'I', '9'}
   };
-  // Optional, negative numbers for COBOL datasets. Use last character to change field meaning.
+  // Optional, negative numbers for COBOL-formatted numeric values.
   std::unordered_map<char, char> neg_values = {
           {'}', '0'}, {'J', '1'}, {'K', '2'}, {'L', '3'}, {'M', '4'},
           {'E', '5'}, {'O', '6'}, {'P', '7'}, {'Q', '8'}, {'R', '9'}
